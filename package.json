@@ -1,0 +1,97 @@
+{
+  "name": "obsidian-notes",
+  "displayName": "Obsidian Notes Integration",
+  "description": "Obsidian-like daily notes and template insertion for digital garden workspaces.",
+  "version": "1.0.0",
+  "publisher": "al",
+  "author": {
+    "name": "Al"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nichsedge/vscode-obsidian-notes.git"
+  },
+  "bugs": {
+    "url": "https://github.com/nichsedge/vscode-obsidian-notes/issues"
+  },
+  "homepage": "https://github.com/nichsedge/vscode-obsidian-notes#readme",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:obsidian-notes.createDailyNote",
+    "onCommand:obsidian-notes.insertTemplate",
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "scripts": {
+    "vscode:prepublish": "",
+    "package": "vsce package",
+    "publish": "vsce publish",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "@types/node": "^16.11.7",
+    "@types/vscode": "^1.74.0",
+    "@vscode/vsce": "^2.15.0",
+    "eslint": "^8.28.0"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "obsidian-notes.createDailyNote",
+        "title": "Obsidian Notes: Create Daily Note"
+      },
+      {
+        "command": "obsidian-notes.insertTemplate",
+        "title": "Obsidian Notes: Insert Template"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "obsidian-notes.createDailyNote",
+        "key": "ctrl+alt+d",
+        "mac": "cmd+alt+d"
+      },
+      {
+        "command": "obsidian-notes.insertTemplate",
+        "key": "ctrl+alt+t",
+        "mac": "cmd+alt+t"
+      }
+    ],
+    "configuration": {
+      "title": "Obsidian Notes",
+      "properties": {
+        "obsidian-notes.templatesFolder": {
+          "type": "string",
+          "default": "templates",
+          "description": "Path to the templates folder relative to the workspace root."
+        },
+        "obsidian-notes.dailyNotesFolder": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the daily notes folder relative to the workspace root (e.g. '', 'journal', etc.)."
+        },
+        "obsidian-notes.dailyNoteTemplate": {
+          "type": "string",
+          "default": "daily.md",
+          "description": "Name of the daily note template file (must exist within the templates folder)."
+        },
+        "obsidian-notes.dateFormat": {
+          "type": "string",
+          "default": "YYYY-MM-DD",
+          "description": "Format for today's daily note filename (without .md extension)."
+        },
+        "obsidian-notes.openDailyNoteOnStartup": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically open or create today's daily note on editor startup."
+        }
+      }
+    }
+  }
+}

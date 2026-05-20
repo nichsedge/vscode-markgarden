@@ -1,0 +1,9 @@
+.vscode/**
+.gitignore
+.vscodeignore
+scratch/**
+node_modules/**
+tsconfig.json
+jsconfig.json
+test/**
+vsc-extension-quickstart.md
