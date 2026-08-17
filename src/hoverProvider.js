@@ -77,6 +77,12 @@ function buildNotePreviewMarkdown(targetPath, parsed, content, maxLength = 1000)
   return md;
 }
 
+function formatFileSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 /**
  * HoverProvider that displays instant rich markdown previews for [[wikilinks]], ![[embeds]], #headings, ^block-ids, and media attachments.
  */
@@ -97,23 +103,33 @@ class ObsidianHoverProvider {
 
     // Media attachment preview branch
     if (parsed.isMedia) {
-      const mediaPath = resolveMediaFilePath(parsed.targetNote, document.fileName);
+      const mediaPath = (this.indexer && this.indexer.resolveMediaPath)
+        ? this.indexer.resolveMediaPath(parsed.targetNote, document.fileName)
+        : resolveMediaFilePath(parsed.targetNote, document.fileName);
       const md = new vscode.MarkdownString();
       md.isTrusted = true;
       md.supportHtml = true;
 
-      if (mediaPath) {
+      if (mediaPath && fs.existsSync(mediaPath)) {
         const ext = path.extname(mediaPath).toLowerCase();
         const imageExts = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico'];
+        let sizeStr = '';
+        try {
+          const stat = fs.statSync(mediaPath);
+          sizeStr = ` \`${formatFileSize(stat.size)}\``;
+        } catch {
+          // ignore
+        }
+
         if (imageExts.includes(ext)) {
           const mediaUri = vscode.Uri.file(mediaPath);
-          md.appendMarkdown(`### 🖼️ **${path.basename(mediaPath)}**\n\n![${path.basename(mediaPath)}](${mediaUri.toString()})\n`);
+          md.appendMarkdown(`### 🖼️ **${path.basename(mediaPath)}**${sizeStr}\n\n![${path.basename(mediaPath)}](${mediaUri.toString()})\n`);
         } else {
           const commandArgs = encodeURIComponent(JSON.stringify({
             target: link.target,
             sourceFile: document.fileName
           }));
-          md.appendMarkdown(`### 📄 **${path.basename(mediaPath)}**\n\n*Media attachment*\n\n[▶️ Open File](command:obsidian-notes.openWikilink?${commandArgs})`);
+          md.appendMarkdown(`### 📄 **${path.basename(mediaPath)}**${sizeStr}\n\n*Media attachment*\n\n[▶️ Open File](command:obsidian-notes.openWikilink?${commandArgs})`);
         }
       } else {
         md.appendMarkdown(`### 🖼️ **${parsed.targetNote}**\n\n*Media file not found in workspace.*`);

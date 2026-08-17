@@ -46,6 +46,7 @@ const {
   extractHeadingSection,
   extractBlockContent,
   parseWikilinkTarget,
+  findPrimaryDocHeading,
   isMediaFile,
   sanitizeContentForTags
 } = require('../src/indexer');
@@ -57,6 +58,9 @@ const {
   deriveDefaultTitle,
   generateRefactoredNoteContent
 } = require('../src/noteRefactor');
+const {
+  registerMarkdownItWikilinks
+} = require('../src/markdownItPlugin');
 const {
   addTagToMarkdown,
   removeTagFromMarkdown,
@@ -134,6 +138,16 @@ test('extractHeadings extracts headings with line numbers', () => {
   assert.strictEqual(headings[1].text, 'Section 1');
   assert.strictEqual(headings[1].level, 2);
   assert.strictEqual(headings[1].line, 3);
+});
+
+test('findPrimaryDocHeading distinguishes top document titles from sub-section headers', () => {
+  const docWithTopHeading = `---\ndate: 2026-08-17\n---\n# Top Title\n\nBody content...`;
+  const headings1 = extractHeadings(docWithTopHeading);
+  assert.strictEqual(findPrimaryDocHeading(docWithTopHeading, headings1), 'Top Title');
+
+  const docWithMidSectionHeading = `---\ndate: 2021-06-25\n---\n[[01 Link]]\n\n# Extras\n[[Link 2]]`;
+  const headings2 = extractHeadings(docWithMidSectionHeading);
+  assert.strictEqual(findPrimaryDocHeading(docWithMidSectionHeading, headings2), '');
 });
 
 test('parseWikilinkTarget handles various wikilink formats', () => {
@@ -384,6 +398,11 @@ test('isMediaFile detects image/media embeds and extractWikilinks filters them o
   const links = extractWikilinks(md);
   assert.strictEqual(links.length, 1);
   assert.strictEqual(links[0].targetNote, 'Actual Note');
+
+  const indexer = new WorkspaceNotesIndexer();
+  indexer.mediaToPathIndex.set('op.jpg', new Set(['/workspace/content/assets/Write/op.jpg']));
+  const resolved = indexer.resolveMediaPath('op.jpg', '/workspace/content/Write/note.md');
+  assert.strictEqual(resolved, '/workspace/content/assets/Write/op.jpg');
 });
 
 // --- Hover Note Previews Tests ---
@@ -439,6 +458,63 @@ test('generateRefactoredNoteContent builds valid frontmatter and backlink', () =
   assert.strictEqual(content.includes('source: "[[Daily Log 2026-08-17]]"'), true);
   assert.strictEqual(content.includes('# Atomic Idea'), true);
   assert.strictEqual(content.includes('This is the extracted body.'), true);
+});
+
+// --- Markdown Preview Plugin Tests ---
+console.log('\nMarkdown Preview Renderer Plugin:');
+
+test('registerMarkdownItWikilinks transforms [[wikilinks]] and ![[embeds]] into HTML AST tokens', () => {
+  class MockToken {
+    constructor(type, tag, nesting) {
+      this.type = type;
+      this.tag = tag;
+      this.nesting = nesting;
+      this.content = '';
+      this.children = null;
+      this.attrs = null;
+    }
+  }
+
+  class MockMarkdownIt {
+    constructor() {
+      this.Token = MockToken;
+      this.rules = [];
+      this.core = {
+        ruler: {
+          after: (afterRule, name, fn) => {
+            this.rules.push(fn);
+          }
+        }
+      };
+    }
+
+    renderInline(text) {
+      const inlineToken = new MockToken('inline', '', 0);
+      const textToken = new MockToken('text', '', 0);
+      textToken.content = text;
+      inlineToken.children = [textToken];
+      const state = { tokens: [inlineToken], Token: MockToken };
+
+      for (const rule of this.rules) {
+        rule(state);
+      }
+      return inlineToken.children;
+    }
+  }
+
+  const md = new MockMarkdownIt();
+  registerMarkdownItWikilinks(md);
+
+  const tokens = md.renderInline('Check [[My Note|Alias]] and ![[photo.jpg]] here.');
+  assert.strictEqual(tokens.length, 7);
+  assert.strictEqual(tokens[0].content, 'Check ');
+  assert.strictEqual(tokens[1].type, 'link_open');
+  assert.strictEqual(tokens[2].content, 'Alias');
+  assert.strictEqual(tokens[3].type, 'link_close');
+  assert.strictEqual(tokens[4].content, ' and ');
+  assert.strictEqual(tokens[5].type, 'image');
+  assert.strictEqual(tokens[5].attrs[0][1], 'photo.jpg');
+  assert.strictEqual(tokens[6].content, ' here.');
 });
 
 console.log(`\nResults: ${testsPassed} passed, ${testsFailed} failed.`);

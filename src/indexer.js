@@ -270,6 +270,37 @@ function parseWikilinkTarget(rawLink) {
 }
 
 /**
+ * Helper to determine if the first H1 heading is a document title heading
+ * (i.e. appears at the top of the note before any body content).
+ */
+function findPrimaryDocHeading(content, headings) {
+  if (!headings || headings.length === 0 || headings[0].level !== 1) {
+    return '';
+  }
+
+  const targetLineIndex = headings[0].line;
+  const lines = content.split(/\r?\n/);
+
+  // Determine end of frontmatter if present
+  let bodyStartLine = 0;
+  const fmMatch = content.match(/^---\r?\n[\s\S]*?\r?\n---/);
+  if (fmMatch) {
+    bodyStartLine = fmMatch[0].split(/\r?\n/).length;
+  }
+
+  // Check all lines between frontmatter end and target heading line
+  for (let i = bodyStartLine; i < targetLineIndex; i++) {
+    const trimmed = lines[i].trim();
+    if (trimmed && !trimmed.startsWith('#')) {
+      // Non-heading body text exists prior to this H1, so it's a section header, not doc title
+      return '';
+    }
+  }
+
+  return headings[0].text;
+}
+
+/**
  * Extracts all outbound wikilinks and transclusion embeds from markdown content.
  * Filters out media file attachments (images, PDFs, audio/video).
  */
@@ -305,6 +336,7 @@ class WorkspaceNotesIndexer {
     this.tagIndex = new Map(); // tag -> Set<filePath>
     this.categoryIndex = new Map(); // category -> Set<filePath>
     this.titleToPathIndex = new Map(); // lowercase note name (without .md) -> Set<filePath>
+    this.mediaToPathIndex = new Map(); // lowercase media basename -> Set<filePath>
     
     this._onDidChangeIndex = new vscode.EventEmitter();
     this.onDidChangeIndex = this._onDidChangeIndex.event;
@@ -326,8 +358,8 @@ class WorkspaceNotesIndexer {
   async initialize(context) {
     await this.rebuildIndex();
 
-    // Create file system watcher for markdown files
-    this._watcher = vscode.workspace.createFileSystemWatcher('**/*.md');
+    // Create file system watcher for markdown and media files
+    this._watcher = vscode.workspace.createFileSystemWatcher('**/*.{md,png,jpg,jpeg,gif,svg,webp,bmp,ico,pdf,mp3,mp4,wav,webm}');
 
     const createDisposable = this._watcher.onDidCreate(uri => this._handleFileChange(uri.fsPath));
     const changeDisposable = this._watcher.onDidChange(uri => this._handleFileChange(uri.fsPath));
@@ -350,7 +382,7 @@ class WorkspaceNotesIndexer {
   }
 
   /**
-   * Full scan of workspace for markdown files.
+   * Full scan of workspace for markdown and media files.
    */
   async rebuildIndex() {
     this.isIndexing = true;
@@ -358,6 +390,7 @@ class WorkspaceNotesIndexer {
     this.tagIndex.clear();
     this.categoryIndex.clear();
     this.titleToPathIndex.clear();
+    this.mediaToPathIndex.clear();
     this._invalidateCache();
 
     const config = vscode.workspace.getConfiguration('obsidian-notes');
@@ -371,6 +404,19 @@ class WorkspaceNotesIndexer {
     ]);
 
     const excludePattern = excluded.length > 0 ? `{${excluded.join(',')}}` : undefined;
+
+    // Scan media files
+    const mediaFiles = await vscode.workspace.findFiles('**/*.{png,jpg,jpeg,gif,svg,webp,bmp,ico,pdf,mp3,mp4,wav,webm}', excludePattern);
+    for (const fileUri of mediaFiles) {
+      const fsPath = fileUri.fsPath;
+      const baseName = path.basename(fsPath).toLowerCase();
+      if (!this.mediaToPathIndex.has(baseName)) {
+        this.mediaToPathIndex.set(baseName, new Set());
+      }
+      this.mediaToPathIndex.get(baseName).add(fsPath);
+    }
+
+    // Scan markdown files
     const files = await vscode.workspace.findFiles('**/*.md', excludePattern);
 
     // Read files concurrently in batches for performance
@@ -392,6 +438,51 @@ class WorkspaceNotesIndexer {
 
     this.isIndexing = false;
     this._onDidChangeIndex.fire();
+  }
+
+  /**
+   * Resolves a media file path by target filename.
+   */
+  resolveMediaPath(targetMedia, sourceFilePath) {
+    if (!targetMedia) return null;
+    let clean = targetMedia.trim();
+    const pipeIdx = clean.indexOf('|');
+    if (pipeIdx !== -1) clean = clean.slice(0, pipeIdx).trim();
+    const hashIdx = clean.indexOf('#');
+    if (hashIdx !== -1) clean = clean.slice(0, hashIdx).trim();
+
+    const baseName = path.basename(clean).toLowerCase();
+    const matches = this.mediaToPathIndex.get(baseName);
+
+    if (matches && matches.size > 0) {
+      if (sourceFilePath) {
+        const sourceDir = path.dirname(sourceFilePath);
+        for (const candidate of matches) {
+          if (path.dirname(candidate) === sourceDir) {
+            return candidate;
+          }
+        }
+      }
+      return matches.values().next().value;
+    }
+
+    return null;
+  }
+
+  /**
+   * Get list of all indexed media file entries.
+   */
+  getAllMediaFiles() {
+    const results = [];
+    for (const [baseName, paths] of this.mediaToPathIndex.entries()) {
+      for (const p of paths) {
+        results.push({
+          baseName,
+          filePath: p
+        });
+      }
+    }
+    return results;
   }
 
   /**
@@ -477,7 +568,7 @@ class WorkspaceNotesIndexer {
 
     // Merge tags
     const allTags = new Set([...frontmatter.tags, ...inlineTags]);
-    const primaryHeading = headings.length > 0 && headings[0].level === 1 ? headings[0].text : '';
+    const primaryHeading = findPrimaryDocHeading(content, headings);
     const title = frontmatter.title || primaryHeading || baseName;
 
     const wikilinks = extractWikilinks(content);
@@ -535,8 +626,8 @@ class WorkspaceNotesIndexer {
         this.titleToPathIndex.set(titleKey, new Set());
       }
       this.titleToPathIndex.get(titleKey).add(filePath);
-    } else if (headings.length > 0 && headings[0].level === 1) {
-      const h1Key = headings[0].text.toLowerCase();
+    } else if (primaryHeading) {
+      const h1Key = primaryHeading.toLowerCase();
       if (!this.titleToPathIndex.has(h1Key)) {
         this.titleToPathIndex.set(h1Key, new Set());
       }
@@ -1008,6 +1099,7 @@ module.exports = {
   extractHeadingSection,
   extractBlockContent,
   parseWikilinkTarget,
+  findPrimaryDocHeading,
   isMediaFile,
   sanitizeContentForTags
 };

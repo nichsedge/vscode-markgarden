@@ -27,6 +27,8 @@ const { BacklinksTreeDataProvider, convertUnlinkedMentionToWikilinkCommand } = r
 const { ObsidianHoverProvider } = require('./src/hoverProvider');
 const { extractSelectionToNote } = require('./src/noteRefactor');
 
+const { registerMarkdownItWikilinks } = require('./src/markdownItPlugin');
+
 let indexer = null;
 let graphViewManager = null;
 
@@ -156,6 +158,9 @@ function deactivate() {
 module.exports = {
   activate,
   deactivate,
+  extendMarkdownIt(md) {
+    return registerMarkdownItWikilinks(md);
+  },
   formatDateTime,
   processTemplate,
   parseTemplateMetadata

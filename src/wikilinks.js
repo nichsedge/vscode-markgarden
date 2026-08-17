@@ -104,13 +104,51 @@ function resolveNewNoteFolder(sourceFilePath) {
 }
 
 /**
+ * Recursively searches a directory for a file matching filename (up to maxDepth).
+ */
+function findFileRecursive(dir, filename, maxDepth = 4, currentDepth = 0) {
+  if (!dir || currentDepth > maxDepth) return null;
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile() && entry.name.toLowerCase() === filename.toLowerCase()) {
+        return path.join(dir, entry.name);
+      }
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const name = entry.name;
+        if (name === 'node_modules' || name === '.git' || name === '.vscode' || name === 'dist' || name === 'out' || name === 'vendor') {
+          continue;
+        }
+        const found = findFileRecursive(path.join(dir, name), filename, maxDepth, currentDepth + 1);
+        if (found) return found;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+/**
  * Resolves media file path (images, audio, video, PDF) in workspace.
  */
-function resolveMediaFilePath(mediaTarget, sourceFilePath) {
+function resolveMediaFilePath(mediaTarget, sourceFilePath, indexer = null) {
   if (!mediaTarget) return null;
-  const cleanTarget = mediaTarget.trim();
+  let cleanTarget = mediaTarget.trim();
+  const pipeIdx = cleanTarget.indexOf('|');
+  if (pipeIdx !== -1) cleanTarget = cleanTarget.slice(0, pipeIdx).trim();
+  const hashIdx = cleanTarget.indexOf('#');
+  if (hashIdx !== -1) cleanTarget = cleanTarget.slice(0, hashIdx).trim();
 
-  // 1. Direct check relative to source file directory
+  // 1. Check indexer first if available
+  if (indexer && typeof indexer.resolveMediaPath === 'function') {
+    const indexedPath = indexer.resolveMediaPath(cleanTarget, sourceFilePath);
+    if (indexedPath) return indexedPath;
+  }
+
+  // 2. Direct check relative to source file directory
   if (sourceFilePath) {
     const sourceDir = path.dirname(sourceFilePath);
     const relativeCandidate = path.resolve(sourceDir, cleanTarget);
@@ -123,18 +161,20 @@ function resolveMediaFilePath(mediaTarget, sourceFilePath) {
     }
   }
 
-  // 2. Check in workspace root and common attachment subdirectories
+  // 3. Check in workspace root and common attachment subdirectories
   const workspaceFolder = (sourceFilePath && vscode.workspace.getWorkspaceFolder(vscode.Uri.file(sourceFilePath))) ||
                           (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0]);
   if (workspaceFolder) {
     const rootPath = workspaceFolder.uri.fsPath;
+    const cleanBase = path.basename(cleanTarget);
     const candidates = [
       path.resolve(rootPath, cleanTarget),
       path.resolve(rootPath, 'attachments', cleanTarget),
       path.resolve(rootPath, 'assets', cleanTarget),
       path.resolve(rootPath, 'images', cleanTarget),
       path.resolve(rootPath, 'media', cleanTarget),
-      path.resolve(rootPath, 'static', cleanTarget)
+      path.resolve(rootPath, 'static', cleanTarget),
+      path.resolve(rootPath, 'content/assets', cleanTarget)
     ];
 
     for (const cand of candidates) {
@@ -146,6 +186,10 @@ function resolveMediaFilePath(mediaTarget, sourceFilePath) {
         // ignore
       }
     }
+
+    // 4. Recursive search fallback in workspace
+    const recursiveMatch = findFileRecursive(rootPath, cleanBase);
+    if (recursiveMatch) return recursiveMatch;
   }
 
   return null;
@@ -184,7 +228,7 @@ class ObsidianDocumentLinkProvider {
       const docLink = new vscode.DocumentLink(item.range, linkUri);
 
       if (parsed.isMedia) {
-        const mediaPath = resolveMediaFilePath(parsed.targetNote, document.fileName);
+        const mediaPath = resolveMediaFilePath(parsed.targetNote, document.fileName, this.indexer);
         docLink.tooltip = mediaPath
           ? `Open media file "${parsed.targetNote}" (Ctrl/Cmd+Click)`
           : `Media file "${parsed.targetNote}" (not found)`;
@@ -220,6 +264,22 @@ class ObsidianDefinitionProvider {
     if (!link) return null;
 
     const parsed = parseWikilinkTarget(link.target);
+
+    if (parsed.isMedia) {
+      const mediaPath = this.indexer.resolveMediaPath
+        ? this.indexer.resolveMediaPath(parsed.targetNote, document.fileName)
+        : resolveMediaFilePath(parsed.targetNote, document.fileName);
+      if (mediaPath) {
+        try {
+          fs.accessSync(mediaPath);
+          return new vscode.Location(vscode.Uri.file(mediaPath), new vscode.Position(0, 0));
+        } catch {
+          return null;
+        }
+      }
+      return null;
+    }
+
     const targetPath = parsed.targetNote
       ? this.indexer.resolveNotePath(parsed.targetNote, document.fileName)
       : document.fileName;
@@ -395,6 +455,19 @@ class ObsidianCompletionItemProvider {
       }
     }
 
+    // Autocomplete media files
+    if (this.indexer.getAllMediaFiles) {
+      const mediaFiles = this.indexer.getAllMediaFiles();
+      for (const media of mediaFiles) {
+        if (!seenTitles.has(media.baseName)) {
+          seenTitles.add(media.baseName);
+          const item = new vscode.CompletionItem(media.baseName, vscode.CompletionItemKind.File);
+          item.detail = `Media Attachment (${path.basename(media.filePath)})`;
+          items.push(item);
+        }
+      }
+    }
+
     return items;
   }
 }
@@ -409,7 +482,7 @@ async function navigateWikilink(targetStr, sourceFilePath, indexer) {
 
   // If target is a media attachment (e.g. image, video, pdf), open media file directly
   if (parsed.isMedia) {
-    const mediaPath = resolveMediaFilePath(parsed.targetNote, sourceFilePath);
+    const mediaPath = resolveMediaFilePath(parsed.targetNote, sourceFilePath, indexer);
     if (mediaPath) {
       vscode.commands.executeCommand('vscode.open', vscode.Uri.file(mediaPath));
     } else {
