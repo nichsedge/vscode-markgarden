@@ -238,11 +238,16 @@ class TagsTreeDataProvider {
     this._onDidChangeTreeData = new vscode.EventEmitter();
     this.onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-    this.indexer.onDidChangeIndex(() => this.refresh());
+    this._indexSubscription = this.indexer.onDidChangeIndex(() => this.refresh());
   }
 
   refresh() {
     this._onDidChangeTreeData.fire();
+  }
+
+  dispose() {
+    this._indexSubscription.dispose();
+    this._onDidChangeTreeData.dispose();
   }
 
   getTreeItem(element) {
@@ -302,11 +307,16 @@ class CategoriesTreeDataProvider {
     this._onDidChangeTreeData = new vscode.EventEmitter();
     this.onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-    this.indexer.onDidChangeIndex(() => this.refresh());
+    this._indexSubscription = this.indexer.onDidChangeIndex(() => this.refresh());
   }
 
   refresh() {
     this._onDidChangeTreeData.fire();
+  }
+
+  dispose() {
+    this._indexSubscription.dispose();
+    this._onDidChangeTreeData.dispose();
   }
 
   getTreeItem(element) {

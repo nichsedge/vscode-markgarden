@@ -51,7 +51,7 @@ function parseFrontmatter(content) {
     }
 
     const key = rawLine.slice(0, colonIdx).trim().toLowerCase();
-    let val = rawLine.slice(colonIdx + 1).trim();
+    const val = rawLine.slice(colonIdx + 1).trim();
 
     if (key === 'title') {
       currentKey = 'title';
@@ -78,21 +78,15 @@ function parseFrontmatter(content) {
 }
 
 /**
- * Strips code blocks, inline code, HTML comments, and URLs from markdown text
+ * Strips code blocks, inline code, HTML comments, frontmatter, and URLs from markdown text
  * so hashtag parsing doesn't match false positives.
+ * Uses combined regex passes for performance.
  */
 function sanitizeContentForTags(content) {
-  // Replace frontmatter with empty lines to preserve line count if needed
-  let sanitized = content.replace(/^---\r?\n[\s\S]*?\r?\n---/, '');
-  // Remove fenced code blocks ``` ... ``` and ~~~ ... ~~~
-  sanitized = sanitized.replace(/```[\s\S]*?```/g, '');
-  sanitized = sanitized.replace(/~~~[\s\S]*?~~~/g, '');
-  // Remove HTML comments <!-- ... -->
-  sanitized = sanitized.replace(/<!--[\s\S]*?-->/g, '');
-  // Remove inline code `...`
-  sanitized = sanitized.replace(/`[^`\r\n]+`/g, '');
-  // Remove URLs e.g. https://... or http://...
-  sanitized = sanitized.replace(/https?:\/\/[^\s)]+/g, '');
+  // Single combined pass: strip frontmatter, fenced code blocks (``` and ~~~), and HTML comments
+  let sanitized = content.replace(/^---\r?\n[\s\S]*?\r?\n---|```[\s\S]*?```|~~~[\s\S]*?~~~|<!--[\s\S]*?-->/g, '');
+  // Remove inline code `...` and URLs
+  sanitized = sanitized.replace(/`[^`\r\n]+`|https?:\/\/[^\s)]+/g, '');
   // Remove markdown headers: lines starting with #, ##, etc.
   sanitized = sanitized.replace(/^[ \t]*#{1,6}[ \t]+.*$/gm, '');
 
@@ -195,7 +189,7 @@ function extractWikilinks(content) {
  */
 class WorkspaceNotesIndexer {
   constructor() {
-    this.fileIndex = new Map(); // filePath -> { title, relativePath, headings, tags, categories, links }
+    this.fileIndex = new Map(); // filePath -> { title, relativePath, headings, tags, categories, links, resolvedLinks }
     this.tagIndex = new Map(); // tag -> Set<filePath>
     this.categoryIndex = new Map(); // category -> Set<filePath>
     this.titleToPathIndex = new Map(); // lowercase note name (without .md) -> Set<filePath>
@@ -204,8 +198,14 @@ class WorkspaceNotesIndexer {
     this.onDidChangeIndex = this._onDidChangeIndex.event;
     
     this.isIndexing = false;
-    this.watcher = null;
-    this.debounceTimer = null;
+    this._watcher = null;
+    this._debounceTimers = new Map(); // filePath -> timerId (per-file debouncing)
+    this._disposables = [];
+
+    // Cached sorted results with dirty flag
+    this._cachedTags = null;
+    this._cachedCategories = null;
+    this._indexDirty = true;
   }
 
   /**
@@ -215,22 +215,26 @@ class WorkspaceNotesIndexer {
     await this.rebuildIndex();
 
     // Create file system watcher for markdown files
-    this.watcher = vscode.workspace.createFileSystemWatcher('**/*.md');
-    this.watcher.onDidCreate(uri => this.handleFileChange(uri.fsPath), this, context.subscriptions);
-    this.watcher.onDidChange(uri => this.handleFileChange(uri.fsPath), this, context.subscriptions);
-    this.watcher.onDidDelete(uri => this.handleFileDelete(uri.fsPath), this, context.subscriptions);
+    this._watcher = vscode.workspace.createFileSystemWatcher('**/*.md');
+
+    const createDisposable = this._watcher.onDidCreate(uri => this._handleFileChange(uri.fsPath));
+    const changeDisposable = this._watcher.onDidChange(uri => this._handleFileChange(uri.fsPath));
+    const deleteDisposable = this._watcher.onDidDelete(uri => this._handleFileDelete(uri.fsPath));
+
+    this._disposables.push(createDisposable, changeDisposable, deleteDisposable);
 
     // Watch for configuration changes that might affect exclusions or folders
-    context.subscriptions.push(
-      vscode.workspace.onDidChangeConfiguration(e => {
-        if (e.affectsConfiguration('obsidian-notes')) {
-          this.rebuildIndex();
-        }
-      })
-    );
+    const configDisposable = vscode.workspace.onDidChangeConfiguration(e => {
+      if (e.affectsConfiguration('obsidian-notes')) {
+        this.rebuildIndex();
+      }
+    });
 
-    context.subscriptions.push(this.watcher);
+    this._disposables.push(configDisposable);
+
+    context.subscriptions.push(this._watcher);
     context.subscriptions.push(this._onDidChangeIndex);
+    context.subscriptions.push(...this._disposables);
   }
 
   /**
@@ -242,6 +246,7 @@ class WorkspaceNotesIndexer {
     this.tagIndex.clear();
     this.categoryIndex.clear();
     this.titleToPathIndex.clear();
+    this._invalidateCache();
 
     const config = vscode.workspace.getConfiguration('obsidian-notes');
     const excluded = config.get('excludedFolders', [
@@ -256,57 +261,87 @@ class WorkspaceNotesIndexer {
     const excludePattern = excluded.length > 0 ? `{${excluded.join(',')}}` : undefined;
     const files = await vscode.workspace.findFiles('**/*.md', excludePattern);
 
-    for (const fileUri of files) {
-      try {
-        const content = fs.readFileSync(fileUri.fsPath, 'utf8');
-        this.indexFileContent(fileUri.fsPath, content);
-      } catch {
-        // Skip unreadable files
+    // Read files concurrently in batches for performance
+    const BATCH_SIZE = 50;
+    for (let i = 0; i < files.length; i += BATCH_SIZE) {
+      const batch = files.slice(i, i + BATCH_SIZE);
+      const results = await Promise.allSettled(
+        batch.map(fileUri => fs.promises.readFile(fileUri.fsPath, 'utf8').then(content => ({ fsPath: fileUri.fsPath, content })))
+      );
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          this._indexFileContent(result.value.fsPath, result.value.content);
+        }
       }
     }
+
+    // Second pass: resolve link targets now that all files are indexed
+    this._resolveAllLinkTargets();
 
     this.isIndexing = false;
     this._onDidChangeIndex.fire();
   }
 
   /**
-   * Handles real-time file update with debounce.
+   * Handles real-time file update with per-file debounce.
+   * Each file gets its own debounce timer so rapid edits to file A
+   * don't cancel a pending re-index of file B.
    */
-  handleFileChange(filePath) {
+  _handleFileChange(filePath) {
     if (!filePath.endsWith('.md')) return;
-    if (this.shouldIgnore(filePath)) return;
+    if (this._shouldIgnore(filePath)) return;
 
-    if (this.debounceTimer) {
-      clearTimeout(this.debounceTimer);
+    // Clear only this file's timer
+    const existingTimer = this._debounceTimers.get(filePath);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
     }
 
-    this.debounceTimer = setTimeout(() => {
+    const timerId = setTimeout(async () => {
+      this._debounceTimers.delete(filePath);
       try {
-        if (fs.existsSync(filePath)) {
-          const content = fs.readFileSync(filePath, 'utf8');
-          this.removeFileFromIndices(filePath);
-          this.indexFileContent(filePath, content);
-          this._onDidChangeIndex.fire();
-        }
+        const content = await fs.promises.readFile(filePath, 'utf8');
+        this._removeFileFromIndices(filePath);
+        this._indexFileContent(filePath, content);
+        this._resolveLinksForFile(filePath);
+        this._invalidateCache();
+        this._onDidChangeIndex.fire();
       } catch {
         // Handle race conditions where file was removed before read
       }
     }, 150);
+
+    this._debounceTimers.set(filePath, timerId);
+  }
+
+  // Keep public alias for backwards compatibility with navigateWikilink calling handleFileChange
+  handleFileChange(filePath) {
+    this._handleFileChange(filePath);
   }
 
   /**
    * Handles real-time file deletion.
    */
-  handleFileDelete(filePath) {
-    this.removeFileFromIndices(filePath);
+  _handleFileDelete(filePath) {
+    this._removeFileFromIndices(filePath);
     this.fileIndex.delete(filePath);
+    this._invalidateCache();
     this._onDidChangeIndex.fire();
+  }
+
+  /**
+   * Invalidates cached sorted tag/category lists.
+   */
+  _invalidateCache() {
+    this._cachedTags = null;
+    this._cachedCategories = null;
+    this._indexDirty = true;
   }
 
   /**
    * Check if a path matches common exclusion directories.
    */
-  shouldIgnore(filePath) {
+  _shouldIgnore(filePath) {
     const normalized = filePath.replace(/\\/g, '/');
     return normalized.includes('/node_modules/') ||
            normalized.includes('/.git/') ||
@@ -317,8 +352,9 @@ class WorkspaceNotesIndexer {
 
   /**
    * Indexes a single markdown file's contents.
+   * Does not resolve link targets — call _resolveLinksForFile or _resolveAllLinkTargets after.
    */
-  indexFileContent(filePath, content) {
+  _indexFileContent(filePath, content) {
     const baseName = path.basename(filePath, '.md');
     const workspaceFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(filePath));
     const relativePath = workspaceFolder ? path.relative(workspaceFolder.uri.fsPath, filePath) : baseName;
@@ -334,17 +370,18 @@ class WorkspaceNotesIndexer {
 
     const wikilinks = extractWikilinks(content);
 
-    // Record file entry
+    // Record file entry — store only what's needed, not the full frontmatter object
     const meta = {
       filePath,
       relativePath,
       baseName,
       title,
+      frontmatterTitle: frontmatter.title || '',
       headings,
       tags: allTags,
       categories: frontmatter.categories,
       links: wikilinks,
-      frontmatter
+      resolvedLinks: [] // populated by _resolveLinksForFile
     };
     this.fileIndex.set(filePath, meta);
 
@@ -386,10 +423,42 @@ class WorkspaceNotesIndexer {
     }
   }
 
+  // Public alias for testing
+  indexFileContent(filePath, content) {
+    this._indexFileContent(filePath, content);
+    this._resolveLinksForFile(filePath);
+  }
+
+  /**
+   * Resolves link targets for a single file using the current index state.
+   */
+  _resolveLinksForFile(filePath) {
+    const meta = this.fileIndex.get(filePath);
+    if (!meta) return;
+
+    meta.resolvedLinks = [];
+    for (const link of meta.links) {
+      if (!link.targetNote) continue;
+      const targetPath = this.resolveNotePath(link.targetNote, filePath);
+      if (targetPath) {
+        meta.resolvedLinks.push({ link, targetPath });
+      }
+    }
+  }
+
+  /**
+   * Resolves all link targets after a full index rebuild.
+   */
+  _resolveAllLinkTargets() {
+    for (const filePath of this.fileIndex.keys()) {
+      this._resolveLinksForFile(filePath);
+    }
+  }
+
   /**
    * Removes a file from inverted indices before re-indexing or after deletion.
    */
-  removeFileFromIndices(filePath) {
+  _removeFileFromIndices(filePath) {
     const existing = this.fileIndex.get(filePath);
     if (!existing) return;
 
@@ -416,8 +485,8 @@ class WorkspaceNotesIndexer {
       if (baseSet.size === 0) this.titleToPathIndex.delete(baseKey);
     }
 
-    if (existing.frontmatter && existing.frontmatter.title) {
-      const titleKey = existing.frontmatter.title.toLowerCase();
+    if (existing.frontmatterTitle) {
+      const titleKey = existing.frontmatterTitle.toLowerCase();
       const titleSet = this.titleToPathIndex.get(titleKey);
       if (titleSet) {
         titleSet.delete(filePath);
@@ -428,7 +497,7 @@ class WorkspaceNotesIndexer {
 
   /**
    * Resolves a target note name to an absolute file path.
-   * Matches by relative path, exact base name, frontmatter title, or case-insensitive name.
+   * Index-first strategy: prefers Map lookups over filesystem I/O.
    */
   resolveNotePath(targetNote, sourceFilePath) {
     if (!targetNote) return null;
@@ -437,12 +506,40 @@ class WorkspaceNotesIndexer {
       clean = clean.slice(0, -3);
     }
 
-    // 1. Direct match by path relative to source file directory or workspace
+    const key = clean.toLowerCase();
+
+    // 1. Fast path: exact match in title index (O(1) Map lookup)
+    const exactMatches = this.titleToPathIndex.get(key);
+    if (exactMatches && exactMatches.size > 0) {
+      // Prefer a match in the same directory as source file
+      if (sourceFilePath) {
+        const sourceDir = path.dirname(sourceFilePath);
+        for (const candidate of exactMatches) {
+          if (path.dirname(candidate) === sourceDir) {
+            return candidate;
+          }
+        }
+      }
+      return exactMatches.values().next().value;
+    }
+
+    // 2. Normalized match ignoring spaces, dashes, and underscores
+    const normalizedTarget = key.replace(/[\s\-_]/g, '');
+    for (const [indexedKey, paths] of this.titleToPathIndex.entries()) {
+      if (indexedKey.replace(/[\s\-_]/g, '') === normalizedTarget && paths.size > 0) {
+        return paths.values().next().value;
+      }
+    }
+
+    // 3. Fallback: filesystem check for notes not yet in the index
     if (sourceFilePath) {
       const sourceDir = path.dirname(sourceFilePath);
       const relativeCandidate = path.join(sourceDir, `${clean}.md`);
-      if (fs.existsSync(relativeCandidate)) {
+      try {
+        fs.accessSync(relativeCandidate);
         return relativeCandidate;
+      } catch {
+        // Not found at relative path
       }
     }
 
@@ -450,24 +547,12 @@ class WorkspaceNotesIndexer {
     if (workspaceFolders) {
       for (const wf of workspaceFolders) {
         const candidate = path.join(wf.uri.fsPath, `${clean}.md`);
-        if (fs.existsSync(candidate)) {
+        try {
+          fs.accessSync(candidate);
           return candidate;
+        } catch {
+          // Not found at workspace path
         }
-      }
-    }
-
-    // 2. Lookup in index
-    const key = clean.toLowerCase();
-    const matches = this.titleToPathIndex.get(key);
-    if (matches && matches.size > 0) {
-      return matches.values().next().value;
-    }
-
-    // 3. Fallback: Normalized match ignoring spaces, dashes, and underscores
-    const normalizedTarget = key.replace(/[\s\-_]/g, '');
-    for (const [indexedKey, paths] of this.titleToPathIndex.entries()) {
-      if (indexedKey.replace(/[\s\-_]/g, '') === normalizedTarget && paths.size > 0) {
-        return paths.values().next().value;
       }
     }
 
@@ -476,24 +561,34 @@ class WorkspaceNotesIndexer {
 
   /**
    * Get all indexed tags and their note counts.
+   * Returns cached sorted results when the index hasn't changed.
    */
   getAllTags() {
-    return Array.from(this.tagIndex.entries()).map(([tag, files]) => ({
+    if (this._cachedTags) return this._cachedTags;
+
+    this._cachedTags = Array.from(this.tagIndex.entries()).map(([tag, files]) => ({
       tag,
       count: files.size,
       files: Array.from(files)
     })).sort((a, b) => a.tag.localeCompare(b.tag));
+
+    return this._cachedTags;
   }
 
   /**
    * Get all indexed categories and their note counts.
+   * Returns cached sorted results when the index hasn't changed.
    */
   getAllCategories() {
-    return Array.from(this.categoryIndex.entries()).map(([category, files]) => ({
+    if (this._cachedCategories) return this._cachedCategories;
+
+    this._cachedCategories = Array.from(this.categoryIndex.entries()).map(([category, files]) => ({
       category,
       count: files.size,
       files: Array.from(files)
     })).sort((a, b) => a.category.localeCompare(b.category));
+
+    return this._cachedCategories;
   }
 
   /**
@@ -505,7 +600,7 @@ class WorkspaceNotesIndexer {
 
   /**
    * Generates graph nodes and links for global or local graph view.
-   * If activeFilePath is provided and maxDepth > 0, returns a local subgraph around that file.
+   * Uses pre-resolved link targets for O(1) lookups instead of re-resolving.
    */
   getGraphData(activeFilePath = null, maxDepth = 0) {
     const rawNodes = new Map();
@@ -518,7 +613,7 @@ class WorkspaceNotesIndexer {
         label: meta.title || meta.baseName,
         baseName: meta.baseName,
         relativePath: meta.relativePath,
-        filePath: filePath,
+        filePath,
         tags: Array.from(meta.tags),
         categories: Array.from(meta.categories),
         inDegree: 0,
@@ -527,8 +622,8 @@ class WorkspaceNotesIndexer {
       });
     }
 
-    // Second pass: resolve outbound links to target files
-    const adjacency = new Map(); // filePath -> Set<neighborFilePath>
+    // Second pass: use pre-resolved link targets (no filesystem I/O)
+    const adjacency = new Map();
     for (const filePath of rawNodes.keys()) {
       adjacency.set(filePath, new Set());
     }
@@ -537,11 +632,9 @@ class WorkspaceNotesIndexer {
       const sourceNode = rawNodes.get(sourcePath);
       if (!sourceNode) continue;
 
-      const links = meta.links || [];
-      for (const link of links) {
-        if (!link.targetNote) continue; // Skip local heading-only links
-        const targetPath = this.resolveNotePath(link.targetNote, sourcePath);
-        if (targetPath && rawNodes.has(targetPath) && targetPath !== sourcePath) {
+      const resolvedLinks = meta.resolvedLinks || [];
+      for (const { link, targetPath } of resolvedLinks) {
+        if (rawNodes.has(targetPath) && targetPath !== sourcePath) {
           const targetNode = rawNodes.get(targetPath);
           sourceNode.outDegree++;
           targetNode.inDegree++;
@@ -569,7 +662,8 @@ class WorkspaceNotesIndexer {
       for (let depth = 0; depth < maxDepth; depth++) {
         const nextLevel = [];
         for (const node of currentLevel) {
-          const neighbors = adjacency.get(node) || [];
+          const neighbors = adjacency.get(node);
+          if (!neighbors) continue;
           for (const neighbor of neighbors) {
             if (!reachable.has(neighbor)) {
               reachable.add(neighbor);
@@ -604,9 +698,31 @@ class WorkspaceNotesIndexer {
   }
 
   dispose() {
-    if (this.watcher) this.watcher.dispose();
+    // Clear all per-file debounce timers
+    for (const timerId of this._debounceTimers.values()) {
+      clearTimeout(timerId);
+    }
+    this._debounceTimers.clear();
+
+    // Dispose event subscriptions
+    for (const d of this._disposables) {
+      d.dispose();
+    }
+    this._disposables.length = 0;
+
+    if (this._watcher) {
+      this._watcher.dispose();
+      this._watcher = null;
+    }
     this._onDidChangeIndex.dispose();
-    if (this.debounceTimer) clearTimeout(this.debounceTimer);
+
+    // Release index memory
+    this.fileIndex.clear();
+    this.tagIndex.clear();
+    this.categoryIndex.clear();
+    this.titleToPathIndex.clear();
+    this._cachedTags = null;
+    this._cachedCategories = null;
   }
 }
 

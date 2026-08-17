@@ -9,23 +9,35 @@ class GraphViewManager {
     this.isLocal = false;
     this.localDepth = 1;
     this.activeFilePath = null;
+    this._disposables = [];
+    this._cachedTagList = null;
+    this._cachedCategoryList = null;
+    this._indexDirty = true;
 
     // Listen to index changes to live-update graph
-    this.indexer.onDidChangeIndex(() => {
+    const indexDisposable = this.indexer.onDidChangeIndex(() => {
+      this._indexDirty = true;
+      this._cachedTagList = null;
+      this._cachedCategoryList = null;
       if (this.panel) {
         this.sendGraphData();
       }
     });
+    this._disposables.push(indexDisposable);
 
     // Listen to active editor changes for Local Graph mode
-    vscode.window.onDidChangeActiveTextEditor(editor => {
+    const editorDisposable = vscode.window.onDidChangeActiveTextEditor(editor => {
       if (editor && editor.document.languageId === 'markdown') {
         this.activeFilePath = editor.document.fileName;
         if (this.panel && this.isLocal) {
           this.sendGraphData();
         }
       }
-    }, null, this.context.subscriptions);
+    });
+    this._disposables.push(editorDisposable);
+
+    // Push all disposables to context subscriptions for automatic cleanup
+    context.subscriptions.push(...this._disposables);
   }
 
   /**
@@ -72,7 +84,7 @@ class GraphViewManager {
 
     this.panel.webview.html = this.getWebviewContent();
 
-    this.panel.webview.onDidReceiveMessage(async message => {
+    const messageDisposable = this.panel.webview.onDidReceiveMessage(async message => {
       switch (message.command) {
         case 'openNote': {
           if (message.filePath) {
@@ -99,11 +111,14 @@ class GraphViewManager {
           break;
         }
       }
-    }, null, this.context.subscriptions);
+    });
 
-    this.panel.onDidDispose(() => {
+    const disposeDisposable = this.panel.onDidDispose(() => {
+      messageDisposable.dispose();
       this.panel = null;
-    }, null, this.context.subscriptions);
+    });
+
+    this.context.subscriptions.push(messageDisposable, disposeDisposable);
 
     this.sendGraphData();
   }
@@ -119,8 +134,12 @@ class GraphViewManager {
       this.isLocal ? this.localDepth : 0
     );
 
-    const allTags = this.indexer.getAllTags().map(t => t.tag);
-    const allCategories = this.indexer.getAllCategories().map(c => c.category);
+    // Use cached tag/category lists when index hasn't changed
+    if (this._indexDirty || !this._cachedTagList) {
+      this._cachedTagList = this.indexer.getAllTags().map(t => t.tag);
+      this._cachedCategoryList = this.indexer.getAllCategories().map(c => c.category);
+      this._indexDirty = false;
+    }
 
     this.panel.webview.postMessage({
       command: 'updateGraph',
@@ -128,9 +147,27 @@ class GraphViewManager {
       isLocal: this.isLocal,
       localDepth: this.localDepth,
       activeNoteTitle: this.activeFilePath ? path.basename(this.activeFilePath, '.md') : '',
-      allTags,
-      allCategories
+      allTags: this._cachedTagList,
+      allCategories: this._cachedCategoryList
     });
+  }
+
+  /**
+   * Disposes all resources held by the GraphViewManager.
+   */
+  dispose() {
+    for (const d of this._disposables) {
+      d.dispose();
+    }
+    this._disposables.length = 0;
+
+    if (this.panel) {
+      this.panel.dispose();
+      this.panel = null;
+    }
+
+    this._cachedTagList = null;
+    this._cachedCategoryList = null;
   }
 
   /**
@@ -147,16 +184,19 @@ class GraphViewManager {
     :root {
       --bg: var(--vscode-editor-background, #1e1e2e);
       --fg: var(--vscode-editor-foreground, #cdd6f4);
-      --card-bg: rgba(30, 30, 46, 0.75);
-      --card-border: rgba(255, 255, 255, 0.1);
-      --accent: #89b4fa;
+      --card-bg: var(--vscode-sideBar-background, #181825);
+      --card-border: var(--vscode-widget-border, rgba(255, 255, 255, 0.15));
+      --accent: var(--vscode-focusBorder, #89b4fa);
       --accent-glow: rgba(137, 180, 250, 0.4);
-      --link-color: rgba(180, 190, 254, 0.25);
-      --link-highlight: #cba6f7;
-      --node-color: #89b4fa;
-      --node-current: #f9e2af;
-      --node-dimmed: rgba(108, 112, 134, 0.25);
-      --tooltip-bg: rgba(17, 17, 27, 0.92);
+      --input-bg: var(--vscode-input-background, #181825);
+      --input-fg: var(--vscode-input-foreground, var(--fg));
+      --input-border: var(--vscode-input-border, var(--card-border));
+      --dropdown-bg: var(--vscode-dropdown-background, #1e1e2e);
+      --dropdown-fg: var(--vscode-dropdown-foreground, var(--fg));
+      --dropdown-border: var(--vscode-dropdown-border, var(--card-border));
+      --tooltip-bg: var(--vscode-editorHoverWidget-background, #11111b);
+      --tooltip-fg: var(--vscode-editorHoverWidget-foreground, var(--fg));
+      --tooltip-border: var(--vscode-editorHoverWidget-border, var(--card-border));
     }
 
     * {
@@ -276,16 +316,40 @@ class GraphViewManager {
       opacity: 0.7;
     }
 
-    input[type="text"], select {
-      background: rgba(0, 0, 0, 0.25);
-      border: 1px solid var(--card-border);
+    input[type="text"] {
+      background: var(--input-bg);
+      color: var(--input-fg);
+      border: 1px solid var(--input-border);
       border-radius: 6px;
-      color: var(--fg);
       padding: 6px 10px;
       font-size: 12px;
       outline: none;
       width: 100%;
       transition: border-color 0.15s;
+    }
+
+    input[type="text"]::placeholder {
+      color: var(--input-fg);
+      opacity: 0.5;
+    }
+
+    select {
+      background-color: var(--dropdown-bg);
+      color: var(--dropdown-fg);
+      border: 1px solid var(--dropdown-border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      outline: none;
+      width: 100%;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+
+    select option {
+      background-color: var(--dropdown-bg);
+      color: var(--dropdown-fg);
+      padding: 4px 8px;
     }
 
     input[type="text"]:focus, select:focus {
@@ -380,10 +444,10 @@ class GraphViewManager {
 
     .btn-action {
       flex: 1;
-      background: rgba(255, 255, 255, 0.08);
+      background: var(--vscode-button-secondaryBackground, rgba(255, 255, 255, 0.08));
       border: 1px solid var(--card-border);
       border-radius: 6px;
-      color: var(--fg);
+      color: var(--vscode-button-secondaryForeground, var(--fg));
       padding: 6px 8px;
       font-size: 11px;
       font-weight: 500;
@@ -392,7 +456,7 @@ class GraphViewManager {
     }
 
     .btn-action:hover {
-      background: rgba(255, 255, 255, 0.15);
+      background: var(--vscode-button-secondaryHoverBackground, rgba(255, 255, 255, 0.15));
       border-color: var(--accent);
     }
 
@@ -411,11 +475,11 @@ class GraphViewManager {
       pointer-events: none;
       background: var(--tooltip-bg);
       backdrop-filter: blur(8px);
-      border: 1px solid var(--card-border);
+      border: 1px solid var(--tooltip-border);
       border-radius: 8px;
       padding: 10px 12px;
       font-size: 12px;
-      color: var(--fg);
+      color: var(--tooltip-fg);
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
       z-index: 20;
       max-width: 260px;
@@ -574,6 +638,16 @@ class GraphViewManager {
     let hoveredNode = null;
     let draggedNode = null;
 
+    // Render loop control — stops when tab is hidden or idle
+    let animationFrameId = null;
+    let isPageVisible = true;
+    let needsRender = true;
+    let physicsSettledFrames = 0;
+    const SETTLE_THRESHOLD = 120; // ~2s of sub-threshold movement = settle
+
+    // Reusable Set for highlight detection — avoids allocation every frame
+    const highlightedNodeIds = new Set();
+
     // Tag Color Palette Generator
     const tagColors = [
       '#89b4fa', '#a6e3a1', '#f9e2af', '#fab387', '#eba0ac',
@@ -601,40 +675,77 @@ class GraphViewManager {
       canvas.height = height * dpr;
       ctx.resetTransform();
       ctx.scale(dpr, dpr);
+      requestRender();
     }
 
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
+
+    // --- Render Loop Control ---
+    function requestRender() {
+      needsRender = true;
+      physicsSettledFrames = 0;
+      startRenderLoop();
+    }
+
+    function startRenderLoop() {
+      if (animationFrameId !== null || !isPageVisible) return;
+      animationFrameId = requestAnimationFrame(renderLoop);
+    }
+
+    function stopRenderLoop() {
+      if (animationFrameId !== null) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+      }
+    }
+
+    // Pause render loop when page is hidden (panel not visible)
+    document.addEventListener('visibilitychange', () => {
+      isPageVisible = !document.hidden;
+      if (isPageVisible) {
+        requestRender();
+      } else {
+        stopRenderLoop();
+      }
+    });
 
     // --- Force Simulation Engine ---
     function initializeSimulation() {
       const width = container.clientWidth;
       const height = container.clientHeight;
 
-      // Assign initial positions in a circular formation around center
-      nodes.forEach((node, i) => {
+      // Assign initial positions proportionally around center if not already set
+      const spreadRadius = Math.max(width, height) * 0.35 * Math.sqrt(Math.max(1, nodes.length / 50));
+      for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i];
         if (node.x === undefined || node.y === undefined) {
           const angle = (i / Math.max(1, nodes.length)) * 2 * Math.PI;
-          const radius = Math.min(width, height) * 0.3 * (0.5 + Math.random() * 0.5);
-          node.x = width / 2 + radius * Math.cos(angle);
-          node.y = height / 2 + radius * Math.sin(angle);
+          const r = spreadRadius * (0.3 + Math.random() * 0.7);
+          node.x = width / 2 + r * Math.cos(angle);
+          node.y = height / 2 + r * Math.sin(angle);
           node.vx = (Math.random() - 0.5) * 2;
           node.vy = (Math.random() - 0.5) * 2;
         }
         node.radius = Math.max(4, Math.min(14, 4 + Math.sqrt(node.linkCount || 1) * 2.5));
-      });
+      }
+      requestRender();
     }
 
     function stepPhysics() {
-      if (!physicsRunning && !draggedNode) return;
+      if (!physicsRunning && !draggedNode) return false;
 
       const width = container.clientWidth;
       const height = container.clientHeight;
       const cx = width / 2;
       const cy = height / 2;
 
-      const repulsionStrength = 1200;
-      const linkDistance = 75;
+      // Dynamically scale repulsion force based on node count so 2000+ nodes don't explode physics
+      const baseRepulsion = nodes.length > 200
+        ? Math.max(100, 1200 / Math.sqrt(nodes.length / 50))
+        : 1200;
+
+      const linkDistance = nodes.length > 500 ? 50 : 75;
       const linkStrength = 0.04;
       const centerGravity = 0.008;
       const damping = 0.88;
@@ -647,7 +758,8 @@ class GraphViewManager {
         node.vy += (cy - node.y) * centerGravity;
       }
 
-      // 2. Coulomb Repulsion between all nodes
+      // 2. Coulomb Repulsion between nodes (distance-capped for large graphs)
+      const maxDistanceSq = nodes.length > 500 ? 250000 : 900000;
       for (let i = 0; i < nodes.length; i++) {
         const n1 = nodes[i];
         for (let j = i + 1; j < nodes.length; j++) {
@@ -655,8 +767,10 @@ class GraphViewManager {
           const dx = n2.x - n1.x;
           const dy = n2.y - n1.y;
           const distSq = dx * dx + dy * dy + 100;
+          if (distSq > maxDistanceSq) continue;
+
           const dist = Math.sqrt(distSq);
-          const force = (repulsionStrength / distSq);
+          const force = baseRepulsion / distSq;
 
           const fx = (dx / dist) * force;
           const fy = (dy / dist) * force;
@@ -698,20 +812,28 @@ class GraphViewManager {
         }
       }
 
-      // 4. Integrate velocity & damping
+      // 4. Integrate velocity & damping, cap max speed to prevent physics explosions
+      const maxVel = 12;
+      let totalEnergy = 0;
       for (let i = 0; i < nodes.length; i++) {
         const node = nodes[i];
         if (node === draggedNode) continue;
-        node.vx *= damping;
-        node.vy *= damping;
+        node.vx = Math.max(-maxVel, Math.min(maxVel, node.vx * damping));
+        node.vy = Math.max(-maxVel, Math.min(maxVel, node.vy * damping));
         node.x += node.vx;
         node.y += node.vy;
+        totalEnergy += node.vx * node.vx + node.vy * node.vy;
       }
+
+      // Return true if physics are still active (not settled)
+      return totalEnergy > 0.01;
     }
 
     // --- Render Loop ---
-    function render() {
-      stepPhysics();
+    function renderLoop() {
+      animationFrameId = null;
+
+      const physicsActive = stepPhysics();
 
       const width = container.clientWidth;
       const height = container.clientHeight;
@@ -723,19 +845,21 @@ class GraphViewManager {
       ctx.translate(transform.x, transform.y);
       ctx.scale(transform.scale, transform.scale);
 
-      // Identify highlighted neighbor set if hovered
-      const highlightedNodeIds = new Set();
+      // Build highlighted neighbor set if hovered — reuses existing Set
+      highlightedNodeIds.clear();
       if (hoveredNode) {
         highlightedNodeIds.add(hoveredNode.id);
-        links.forEach(l => {
+        for (let i = 0; i < links.length; i++) {
+          const l = links[i];
           const sId = typeof l.source === 'object' ? l.source.id : l.source;
           const tId = typeof l.target === 'object' ? l.target.id : l.target;
           if (sId === hoveredNode.id) highlightedNodeIds.add(tId);
           if (tId === hoveredNode.id) highlightedNodeIds.add(sId);
-        });
+        }
       }
 
-      // Render Links
+      // Render Links with minimum line width in screen space so they stay visible when zoomed out
+      const minLineWidth = 0.5 / transform.scale;
       for (let i = 0; i < links.length; i++) {
         const link = links[i];
         const source = typeof link.source === 'object' ? link.source : nodeMap.get(link.source);
@@ -751,28 +875,34 @@ class GraphViewManager {
 
         if (isHighlighted) {
           ctx.strokeStyle = '#cba6f7';
-          ctx.lineWidth = 2 / transform.scale;
+          ctx.lineWidth = Math.max(minLineWidth * 2, 2 / transform.scale);
         } else if (isDimmed) {
           ctx.strokeStyle = 'rgba(180, 190, 254, 0.06)';
-          ctx.lineWidth = 0.8 / transform.scale;
+          ctx.lineWidth = Math.max(minLineWidth * 0.8, 0.8 / transform.scale);
         } else {
           ctx.strokeStyle = 'rgba(180, 190, 254, 0.25)';
-          ctx.lineWidth = 1 / transform.scale;
+          ctx.lineWidth = Math.max(minLineWidth, 1 / transform.scale);
         }
 
         ctx.stroke();
       }
 
-      // Render Nodes
+      // Cache lowered search query outside the node loop
+      const lowerSearch = searchQuery ? searchQuery.toLowerCase() : '';
+
+      // Render Nodes with minimum radius in screen space (2.5px) so nodes NEVER disappear when zoomed out
+      const minScreenRadius = 2.5;
+      const minWorldRadius = minScreenRadius / transform.scale;
+
       for (let i = 0; i < nodes.length; i++) {
         const node = nodes[i];
         const isHovered = node === hoveredNode;
         const isConnected = highlightedNodeIds.has(node.id);
-        const matchesSearch = searchQuery ? node.label.toLowerCase().includes(searchQuery.toLowerCase()) : true;
+        const matchesSearch = lowerSearch ? node.label.toLowerCase().includes(lowerSearch) : true;
         const isDimmed = (hoveredNode && !isConnected) || (!matchesSearch);
 
         const nodeColor = node.isCurrent ? '#f9e2af' : getTagColor(node.tags);
-        const baseRadius = node.radius;
+        const baseRadius = Math.max(node.radius || 4, minWorldRadius);
         const radius = isHovered ? baseRadius * 1.3 : baseRadius;
 
         ctx.beginPath();
@@ -787,11 +917,13 @@ class GraphViewManager {
 
         // Node outline/glow
         if (isHovered || node.isCurrent) {
-          ctx.lineWidth = (isHovered ? 3 : 2) / transform.scale;
+          ctx.lineWidth = Math.max(1 / transform.scale, (isHovered ? 3 : 2) / transform.scale);
           ctx.strokeStyle = isHovered ? '#ffffff' : '#f9e2af';
           ctx.stroke();
-        }        // Node Label
-        const shouldShowLabel = transform.scale > 0.8 || isHovered || isConnected || node.isCurrent || (searchQuery && matchesSearch);
+        }
+
+        // Node Label
+        const shouldShowLabel = transform.scale > 0.6 || isHovered || isConnected || node.isCurrent || (searchQuery && matchesSearch);
         if (shouldShowLabel && !isDimmed) {
           ctx.font = Math.max(10, Math.round(12 / Math.sqrt(transform.scale))) + 'px sans-serif';
           ctx.fillStyle = isHovered ? '#ffffff' : 'rgba(255, 255, 255, 0.85)';
@@ -802,10 +934,25 @@ class GraphViewManager {
       }
 
       ctx.restore();
-      requestAnimationFrame(render);
+
+      // Decide whether to continue the render loop
+      const shouldContinue = physicsActive || draggedNode || hoveredNode || isDraggingCanvas || needsRender;
+      needsRender = false;
+
+      if (shouldContinue) {
+        physicsSettledFrames = 0;
+        animationFrameId = requestAnimationFrame(renderLoop);
+      } else {
+        physicsSettledFrames++;
+        if (physicsSettledFrames < SETTLE_THRESHOLD) {
+          // Keep running briefly to detect full settling
+          animationFrameId = requestAnimationFrame(renderLoop);
+        }
+      }
     }
 
-    requestAnimationFrame(render);
+    // Start initial render
+    startRenderLoop();
 
     // --- Coordinate Transformation Helpers ---
     function screenToWorld(sx, sy) {
@@ -841,6 +988,7 @@ class GraphViewManager {
         draggedNode = clicked;
         draggedNode.vx = 0;
         draggedNode.vy = 0;
+        requestRender();
       } else {
         isDraggingCanvas = true;
         dragStart = { x: e.clientX - transform.x, y: e.clientY - transform.y };
@@ -855,6 +1003,7 @@ class GraphViewManager {
       if (isDraggingCanvas) {
         transform.x = e.clientX - dragStart.x;
         transform.y = e.clientY - dragStart.y;
+        requestRender();
         return;
       }
 
@@ -865,6 +1014,7 @@ class GraphViewManager {
         draggedNode.y = world.y;
         draggedNode.vx = 0;
         draggedNode.vy = 0;
+        requestRender();
         return;
       }
 
@@ -872,6 +1022,7 @@ class GraphViewManager {
       const hit = findNodeAt(world.x, world.y);
       if (hit !== hoveredNode) {
         hoveredNode = hit;
+        requestRender();
         if (hoveredNode) {
           showTooltip(hoveredNode, e.clientX, e.clientY);
         } else {
@@ -884,26 +1035,32 @@ class GraphViewManager {
 
     window.addEventListener('mouseup', () => {
       isDraggingCanvas = false;
-      draggedNode = null;
+      if (draggedNode) {
+        draggedNode = null;
+        requestRender();
+      }
     });
 
-    // Zoom on Wheel
+    // Zoom on Wheel with wide scale limits (0.0005 to 20.0) so large graphs don't snap or lose nodes
     container.addEventListener('wheel', e => {
       e.preventDefault();
       const rect = canvas.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
 
-      const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
-      const newScale = Math.max(0.15, Math.min(5.0, transform.scale * zoomFactor));
+      const zoomFactor = e.deltaY < 0 ? 1.12 : 0.88;
+      const minScale = 0.0005;
+      const maxScale = 20.0;
+      const newScale = Math.max(minScale, Math.min(maxScale, transform.scale * zoomFactor));
 
-      // Zoom towards mouse pointer
-      transform.x = mouseX - (mouseX - transform.x) * (newScale / transform.scale);
-      transform.y = mouseY - (mouseY - transform.y) * (newScale / transform.scale);
+      const scaleRatio = newScale / transform.scale;
+      transform.x = mouseX - (mouseX - transform.x) * scaleRatio;
+      transform.y = mouseY - (mouseY - transform.y) * scaleRatio;
       transform.scale = newScale;
+      requestRender();
     }, { passive: false });
 
-    // Double-click or click to open note
+    // Click to open note
     container.addEventListener('click', e => {
       const rect = canvas.getBoundingClientRect();
       const sx = e.clientX - rect.left;
@@ -959,6 +1116,7 @@ class GraphViewManager {
 
     // --- Filter & Graph Update Logic ---
     function applyFilters() {
+      const oldNodeMap = new Map(nodeMap);
       nodeMap.clear();
       let filtered = rawNodes;
 
@@ -971,7 +1129,17 @@ class GraphViewManager {
       }
 
       nodes = filtered;
-      nodes.forEach(n => nodeMap.set(n.id, n));
+      for (let i = 0; i < nodes.length; i++) {
+        const n = nodes[i];
+        const prev = oldNodeMap.get(n.id);
+        if (prev && prev.x !== undefined && prev.y !== undefined) {
+          n.x = prev.x;
+          n.y = prev.y;
+          n.vx = prev.vx || 0;
+          n.vy = prev.vy || 0;
+        }
+        nodeMap.set(n.id, n);
+      }
 
       links = rawLinks.filter(l => {
         const sId = typeof l.source === 'object' ? l.source.id : l.source;
@@ -987,12 +1155,13 @@ class GraphViewManager {
       if (nodes.length === 0) return;
 
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      nodes.forEach(n => {
+      for (let i = 0; i < nodes.length; i++) {
+        const n = nodes[i];
         if (n.x < minX) minX = n.x;
         if (n.x > maxX) maxX = n.x;
         if (n.y < minY) minY = n.y;
         if (n.y > maxY) maxY = n.y;
-      });
+      }
 
       const width = container.clientWidth;
       const height = container.clientHeight;
@@ -1006,11 +1175,13 @@ class GraphViewManager {
       transform.scale = scale;
       transform.x = width / 2 - cx * scale;
       transform.y = height / 2 - cy * scale;
+      requestRender();
     }
 
     // --- Event Listeners for Controls ---
     searchInput.addEventListener('input', e => {
       searchQuery = e.target.value.trim();
+      requestRender();
     });
 
     tagFilter.addEventListener('change', e => {
@@ -1049,6 +1220,9 @@ class GraphViewManager {
     btnTogglePhysics.addEventListener('click', () => {
       physicsRunning = !physicsRunning;
       btnTogglePhysics.textContent = physicsRunning ? 'Pause' : 'Resume';
+      if (physicsRunning) {
+        requestRender();
+      }
     });
 
     btnTogglePanel.addEventListener('click', () => {
@@ -1081,13 +1255,14 @@ class GraphViewManager {
         const currentTag = tagFilter.value;
         tagFilter.innerHTML = '<option value="">Filter by Tag: All</option>';
         if (message.allTags) {
-          message.allTags.forEach(tag => {
+          for (let i = 0; i < message.allTags.length; i++) {
+            const tag = message.allTags[i];
             const opt = document.createElement('option');
             opt.value = tag;
             opt.textContent = '#' + tag;
             if (tag === currentTag) opt.selected = true;
             tagFilter.appendChild(opt);
-          });
+          }
         }
 
         applyFilters();

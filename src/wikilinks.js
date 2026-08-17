@@ -4,10 +4,53 @@ const path = require('path');
 const { parseWikilinkTarget, extractHeadings } = require('./indexer');
 
 /**
+ * Simple LRU cache for parsed wikilink results keyed on (uri, version).
+ * Avoids re-scanning the same unchanged document on every provider call.
+ */
+class DocumentParseCache {
+  constructor(maxSize = 32) {
+    this._cache = new Map();
+    this._maxSize = maxSize;
+  }
+
+  _key(document) {
+    return document.uri.toString() + ':' + document.version;
+  }
+
+  get(document) {
+    const key = this._key(document);
+    const entry = this._cache.get(key);
+    if (entry) {
+      // Move to end (most recently used)
+      this._cache.delete(key);
+      this._cache.set(key, entry);
+      return entry;
+    }
+    return null;
+  }
+
+  set(document, value) {
+    const key = this._key(document);
+    // Evict oldest if at capacity
+    if (this._cache.size >= this._maxSize) {
+      const oldest = this._cache.keys().next().value;
+      this._cache.delete(oldest);
+    }
+    this._cache.set(key, value);
+  }
+}
+
+const wikilinkCache = new DocumentParseCache();
+
+/**
  * Finds all wikilink matches in a text document.
- * Returns array of { range, target, raw }
+ * Returns array of { range, target, raw, offset }
+ * Uses an LRU cache to avoid re-parsing unchanged documents.
  */
 function findWikilinksInDocument(document) {
+  const cached = wikilinkCache.get(document);
+  if (cached) return cached;
+
   const text = document.getText();
   const wikilinks = [];
   const regex = /\[\[([^[\r\n\]]+)\]\]/g;
@@ -24,6 +67,7 @@ function findWikilinksInDocument(document) {
     });
   }
 
+  wikilinkCache.set(document, wikilinks);
   return wikilinks;
 }
 
@@ -59,6 +103,7 @@ function resolveNewNoteFolder(sourceFilePath) {
 
 /**
  * DocumentLinkProvider to make [[wikilinks]] clickable in markdown files.
+ * Uses cached parsed wikilinks and pre-resolved link targets from the indexer.
  */
 class ObsidianDocumentLinkProvider {
   constructor(indexer) {
@@ -67,10 +112,19 @@ class ObsidianDocumentLinkProvider {
 
   provideDocumentLinks(document) {
     const links = findWikilinksInDocument(document);
+    const meta = this.indexer.fileIndex.get(document.fileName);
+    // Build a quick lookup map from targetNote -> resolved path using cached resolved links
+    const resolvedMap = new Map();
+    if (meta && meta.resolvedLinks) {
+      for (const { link, targetPath } of meta.resolvedLinks) {
+        resolvedMap.set(link.targetNote, targetPath);
+      }
+    }
+
     return links.map(item => {
       const parsed = parseWikilinkTarget(item.target);
       const targetPath = parsed.targetNote
-        ? this.indexer.resolveNotePath(parsed.targetNote, document.fileName)
+        ? (resolvedMap.get(parsed.targetNote) || this.indexer.resolveNotePath(parsed.targetNote, document.fileName))
         : document.fileName;
 
       // Encode arguments for command URI
@@ -106,21 +160,35 @@ class ObsidianDefinitionProvider {
       ? this.indexer.resolveNotePath(parsed.targetNote, document.fileName)
       : document.fileName;
 
-    if (!targetPath || !fs.existsSync(targetPath)) {
+    if (!targetPath) return null;
+
+    // Use fs.accessSync instead of existsSync — throws on missing
+    try {
+      fs.accessSync(targetPath);
+    } catch {
       return null;
     }
 
     let targetLine = 0;
     if (parsed.heading) {
-      try {
-        const content = fs.readFileSync(targetPath, 'utf8');
-        const headings = extractHeadings(content);
-        const headingMatch = headings.find(h => h.text.toLowerCase() === parsed.heading.toLowerCase());
+      // Check indexed headings first before reading from disk
+      const targetMeta = this.indexer.fileIndex.get(targetPath);
+      if (targetMeta && targetMeta.headings) {
+        const headingMatch = targetMeta.headings.find(h => h.text.toLowerCase() === parsed.heading.toLowerCase());
         if (headingMatch) {
           targetLine = headingMatch.line;
         }
-      } catch {
-        // Fallback to line 0
+      } else {
+        try {
+          const content = fs.readFileSync(targetPath, 'utf8');
+          const headings = extractHeadings(content);
+          const headingMatch = headings.find(h => h.text.toLowerCase() === parsed.heading.toLowerCase());
+          if (headingMatch) {
+            targetLine = headingMatch.line;
+          }
+        } catch {
+          // Fallback to line 0
+        }
       }
     }
 
@@ -160,18 +228,32 @@ class ObsidianCompletionItemProvider {
         targetFile = this.indexer.resolveNotePath(targetNoteName, document.fileName);
       }
 
-      if (targetFile && fs.existsSync(targetFile)) {
-        try {
-          const content = fs.readFileSync(targetFile, 'utf8');
-          const headings = extractHeadings(content);
+      if (targetFile) {
+        // Use indexed headings if available
+        const targetMeta = this.indexer.fileIndex.get(targetFile);
+        const headings = targetMeta ? targetMeta.headings : null;
+
+        if (headings) {
           for (const h of headings) {
             const item = new vscode.CompletionItem(h.text, vscode.CompletionItemKind.Reference);
             item.detail = `Heading (H${h.level}) in ${path.basename(targetFile)}`;
             item.insertText = h.text;
             items.push(item);
           }
-        } catch {
-          // ignore
+        } else {
+          try {
+            fs.accessSync(targetFile);
+            const content = fs.readFileSync(targetFile, 'utf8');
+            const diskHeadings = extractHeadings(content);
+            for (const h of diskHeadings) {
+              const item = new vscode.CompletionItem(h.text, vscode.CompletionItemKind.Reference);
+              item.detail = `Heading (H${h.level}) in ${path.basename(targetFile)}`;
+              item.insertText = h.text;
+              items.push(item);
+            }
+          } catch {
+            // ignore
+          }
         }
       }
       return items;
@@ -187,8 +269,8 @@ class ObsidianCompletionItemProvider {
         seenTitles.add(note.baseName);
         const item = new vscode.CompletionItem(note.baseName, vscode.CompletionItemKind.File);
         item.detail = note.relativePath;
-        if (note.frontmatter && note.frontmatter.title && note.frontmatter.title !== note.baseName) {
-          item.documentation = `Title: ${note.frontmatter.title}`;
+        if (note.frontmatterTitle && note.frontmatterTitle !== note.baseName) {
+          item.documentation = `Title: ${note.frontmatterTitle}`;
         }
         items.push(item);
       }
@@ -253,9 +335,17 @@ async function navigateWikilink(targetStr, sourceFilePath, indexer) {
 
     // If heading anchor is present, jump to heading
     if (parsed.heading) {
-      const content = doc.getText();
-      const headings = extractHeadings(content);
-      const headingMatch = headings.find(h => h.text.toLowerCase() === parsed.heading.toLowerCase());
+      // Use indexed headings if available
+      const targetMeta = indexer.fileIndex.get(targetPath);
+      let headingMatch = null;
+      if (targetMeta && targetMeta.headings) {
+        headingMatch = targetMeta.headings.find(h => h.text.toLowerCase() === parsed.heading.toLowerCase());
+      }
+      if (!headingMatch) {
+        const content = doc.getText();
+        const headings = extractHeadings(content);
+        headingMatch = headings.find(h => h.text.toLowerCase() === parsed.heading.toLowerCase());
+      }
 
       if (headingMatch) {
         const line = headingMatch.line;

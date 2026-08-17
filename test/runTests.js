@@ -7,7 +7,7 @@ Module.prototype.require = function(path) {
   if (path === 'vscode') {
     return {
       EventEmitter: class {
-        constructor() { this.event = () => {}; }
+        constructor() { this.event = () => ({ dispose() {} }); }
         fire() {}
         dispose() {}
       },
@@ -238,6 +238,9 @@ test('getGraphData produces correct global nodes, links, and local subgraph', ()
   indexer.indexFileContent('/workspace/noteC.md', `# Note C\nLinks to [[Note D]].`);
   indexer.indexFileContent('/workspace/noteD.md', `# Note D\nNo links.`);
   indexer.indexFileContent('/workspace/orphan.md', `# Orphan Note\nNo links.`);
+
+  // Re-resolve link targets now that all notes are indexed
+  indexer._resolveAllLinkTargets();
 
   // 1. Global graph
   const globalGraph = indexer.getGraphData(null, 0);

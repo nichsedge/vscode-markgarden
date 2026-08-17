@@ -38,6 +38,7 @@ async function activate(context) {
 
   // Initialize Graph View Manager
   graphViewManager = new GraphViewManager(context, indexer);
+  context.subscriptions.push(graphViewManager);
 
   // Markdown document selector
   const markdownSelector = { language: 'markdown', scheme: 'file' };
@@ -55,13 +56,15 @@ async function activate(context) {
     vscode.languages.registerCompletionItemProvider(markdownSelector, hashtagCompletionProvider, '#')
   );
 
-  // Register Sidebar Tree Views
+  // Register Sidebar Tree Views (with proper disposal)
   const tagsTreeDataProvider = new TagsTreeDataProvider(indexer);
   const categoriesTreeDataProvider = new CategoriesTreeDataProvider(indexer);
 
   context.subscriptions.push(
     vscode.window.registerTreeDataProvider('obsidian-notes-tags', tagsTreeDataProvider),
-    vscode.window.registerTreeDataProvider('obsidian-notes-categories', categoriesTreeDataProvider)
+    vscode.window.registerTreeDataProvider('obsidian-notes-categories', categoriesTreeDataProvider),
+    tagsTreeDataProvider,
+    categoriesTreeDataProvider
   );
 
   // Register Commands
@@ -122,17 +125,21 @@ async function activate(context) {
 }
 
 function deactivate() {
+  // All disposables are tracked via context.subscriptions and disposed automatically
+  // but we also nullify references for GC
+  if (graphViewManager) {
+    graphViewManager.dispose();
+    graphViewManager = null;
+  }
   if (indexer) {
     indexer.dispose();
     indexer = null;
   }
-  graphViewManager = null;
 }
 
 module.exports = {
   activate,
   deactivate,
-  // Exported for testing / backwards compatibility
   formatDateTime,
   processTemplate,
   parseTemplateMetadata
