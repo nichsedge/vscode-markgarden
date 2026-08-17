@@ -1,8 +1,8 @@
 {
   "name": "obsidian-notes",
   "displayName": "Obsidian Notes Integration",
-  "description": "Obsidian-like daily notes and template insertion for digital garden workspaces.",
-  "version": "1.0.0",
+  "description": "Obsidian-like daily notes, template insertion, Wikilinks navigation, category/tag management, and interactive graph view for digital garden workspaces.",
+  "version": "1.2.0",
   "publisher": "al",
   "author": {
     "name": "Al"
@@ -20,11 +20,14 @@
     "vscode": "^1.74.0"
   },
   "categories": [
-    "Other"
+    "Other",
+    "Programming Languages",
+    "Visualization"
   ],
   "activationEvents": [
-    "onCommand:obsidian-notes.createDailyNote",
-    "onCommand:obsidian-notes.insertTemplate",
+    "onLanguage:markdown",
+    "onView:obsidian-notes-tags",
+    "onView:obsidian-notes-categories",
     "onStartupFinished"
   ],
   "main": "./extension.js",
@@ -32,7 +35,8 @@
     "vscode:prepublish": "",
     "package": "vsce package",
     "publish": "vsce publish",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "node test/runTests.js"
   },
   "devDependencies": {
     "@types/node": "^16.11.7",
@@ -41,17 +45,157 @@
     "eslint": "^8.28.0"
   },
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "obsidian-notes-view",
+          "title": "Obsidian Notes",
+          "icon": "resources/obsidian.svg"
+        }
+      ]
+    },
+    "views": {
+      "obsidian-notes-view": [
+        {
+          "id": "obsidian-notes-tags",
+          "name": "Tags"
+        },
+        {
+          "id": "obsidian-notes-categories",
+          "name": "Categories"
+        }
+      ]
+    },
     "commands": [
       {
+        "command": "obsidian-notes.openGraphView",
+        "title": "Open Graph View",
+        "category": "Obsidian Notes",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "obsidian-notes.openLocalGraphView",
+        "title": "Open Local Graph View",
+        "category": "Obsidian Notes",
+        "icon": "$(references)"
+      },
+      {
         "command": "obsidian-notes.createDailyNote",
-        "title": "Obsidian Notes: Create Daily Note"
+        "title": "Create Daily Note",
+        "category": "Obsidian Notes"
       },
       {
         "command": "obsidian-notes.insertTemplate",
-        "title": "Obsidian Notes: Insert Template"
+        "title": "Insert Template",
+        "category": "Obsidian Notes"
+      },
+      {
+        "command": "obsidian-notes.openLinkAtCursor",
+        "title": "Follow Link Under Cursor",
+        "category": "Obsidian Notes"
+      },
+      {
+        "command": "obsidian-notes.addTag",
+        "title": "Add Tag to Current Note",
+        "category": "Obsidian Notes"
+      },
+      {
+        "command": "obsidian-notes.removeTag",
+        "title": "Remove Tag from Current Note",
+        "category": "Obsidian Notes"
+      },
+      {
+        "command": "obsidian-notes.findNotesByTag",
+        "title": "Find Notes by Tag",
+        "category": "Obsidian Notes"
+      },
+      {
+        "command": "obsidian-notes.renameTag",
+        "title": "Rename Tag Across Workspace",
+        "category": "Obsidian Notes"
+      },
+      {
+        "command": "obsidian-notes.addCategory",
+        "title": "Add Category to Current Note",
+        "category": "Obsidian Notes"
+      },
+      {
+        "command": "obsidian-notes.removeCategory",
+        "title": "Remove Category from Current Note",
+        "category": "Obsidian Notes"
+      },
+      {
+        "command": "obsidian-notes.findNotesByCategory",
+        "title": "Find Notes by Category",
+        "category": "Obsidian Notes"
+      },
+      {
+        "command": "obsidian-notes.renameCategory",
+        "title": "Rename Category Across Workspace",
+        "category": "Obsidian Notes"
+      },
+      {
+        "command": "obsidian-notes.refreshIndex",
+        "title": "Refresh Notes Index",
+        "category": "Obsidian Notes"
       }
     ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "obsidian-notes.openGraphView",
+          "when": "editorLangId == markdown",
+          "group": "navigation@1"
+        },
+        {
+          "command": "obsidian-notes.openLocalGraphView",
+          "when": "editorLangId == markdown",
+          "group": "navigation@2"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "obsidian-notes.openGraphView",
+          "when": "view == obsidian-notes-tags || view == obsidian-notes-categories",
+          "group": "navigation@1"
+        },
+        {
+          "command": "obsidian-notes.refreshIndex",
+          "when": "view == obsidian-notes-tags || view == obsidian-notes-categories",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "obsidian-notes.renameTag",
+          "when": "viewItem == obsidianTag",
+          "group": "inline"
+        },
+        {
+          "command": "obsidian-notes.renameCategory",
+          "when": "viewItem == obsidianCategory",
+          "group": "inline"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "obsidian-notes.openLinkAtCursor",
+          "when": "editorTextFocus && editorLangId == markdown",
+          "group": "navigation"
+        },
+        {
+          "command": "obsidian-notes.openLocalGraphView",
+          "when": "editorTextFocus && editorLangId == markdown",
+          "group": "navigation"
+        }
+      ]
+    },
     "keybindings": [
+      {
+        "command": "obsidian-notes.openGraphView",
+        "key": "ctrl+alt+g",
+        "mac": "cmd+alt+g"
+      },
       {
         "command": "obsidian-notes.createDailyNote",
         "key": "ctrl+alt+d",
@@ -61,6 +205,11 @@
         "command": "obsidian-notes.insertTemplate",
         "key": "ctrl+alt+t",
         "mac": "cmd+alt+t"
+      },
+      {
+        "command": "obsidian-notes.openLinkAtCursor",
+        "key": "alt+enter",
+        "when": "editorTextFocus && editorLangId == markdown"
       }
     ],
     "configuration": {
@@ -90,6 +239,44 @@
           "type": "boolean",
           "default": false,
           "description": "Automatically open or create today's daily note on editor startup."
+        },
+        "obsidian-notes.newNoteFolderStrategy": {
+          "type": "string",
+          "enum": [
+            "root",
+            "sameAsCurrent",
+            "custom"
+          ],
+          "default": "root",
+          "description": "Where to create new notes when following a non-existent [[wikilink]]: 'root' (workspace root), 'sameAsCurrent' (same directory as active note), or 'custom' (configured in notesFolder)."
+        },
+        "obsidian-notes.notesFolder": {
+          "type": "string",
+          "default": "",
+          "description": "Custom destination folder path for new notes when newNoteFolderStrategy is set to 'custom'."
+        },
+        "obsidian-notes.tagPrefix": {
+          "type": "string",
+          "enum": [
+            "frontmatter",
+            "inline"
+          ],
+          "default": "frontmatter",
+          "description": "Default placement style when adding tags: 'frontmatter' (YAML frontmatter) or 'inline' (#tag at end of file)."
+        },
+        "obsidian-notes.excludedFolders": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/node_modules/**",
+            "**/.git/**",
+            "**/.vscode/**",
+            "**/dist/**",
+            "**/out/**"
+          ],
+          "description": "Glob patterns of directories to exclude from workspace notes and tag indexing."
         }
       }
     }
