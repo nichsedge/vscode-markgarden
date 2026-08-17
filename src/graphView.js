@@ -10,6 +10,7 @@ class GraphViewManager {
     this.localDepth = 1;
     this.activeFilePath = null;
     this._disposables = [];
+    this._panelDisposables = [];
     this._cachedTagList = null;
     this._cachedCategoryList = null;
     this._indexDirty = true;
@@ -35,9 +36,13 @@ class GraphViewManager {
       }
     });
     this._disposables.push(editorDisposable);
+  }
 
-    // Push all disposables to context subscriptions for automatic cleanup
-    context.subscriptions.push(...this._disposables);
+  _clearPanelDisposables() {
+    for (const d of this._panelDisposables) {
+      d.dispose();
+    }
+    this._panelDisposables.length = 0;
   }
 
   /**
@@ -63,6 +68,8 @@ class GraphViewManager {
       this.sendGraphData();
       return;
     }
+
+    this._clearPanelDisposables();
 
     this.panel = vscode.window.createWebviewPanel(
       'obsidianGraphView',
@@ -114,11 +121,11 @@ class GraphViewManager {
     });
 
     const disposeDisposable = this.panel.onDidDispose(() => {
-      messageDisposable.dispose();
+      this._clearPanelDisposables();
       this.panel = null;
     });
 
-    this.context.subscriptions.push(messageDisposable, disposeDisposable);
+    this._panelDisposables.push(messageDisposable, disposeDisposable);
 
     this.sendGraphData();
   }
@@ -156,6 +163,8 @@ class GraphViewManager {
    * Disposes all resources held by the GraphViewManager.
    */
   dispose() {
+    this._clearPanelDisposables();
+
     for (const d of this._disposables) {
       d.dispose();
     }

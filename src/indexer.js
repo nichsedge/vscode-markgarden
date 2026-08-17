@@ -375,10 +375,6 @@ class WorkspaceNotesIndexer {
     });
 
     this._disposables.push(configDisposable);
-
-    context.subscriptions.push(this._watcher);
-    context.subscriptions.push(this._onDidChangeIndex);
-    context.subscriptions.push(...this._disposables);
   }
 
   /**
@@ -526,6 +522,11 @@ class WorkspaceNotesIndexer {
    * Handles real-time file deletion.
    */
   _handleFileDelete(filePath) {
+    const existingTimer = this._debounceTimers.get(filePath);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      this._debounceTimers.delete(filePath);
+    }
     this._removeFileFromIndices(filePath);
     this.fileIndex.delete(filePath);
     this._invalidateCache();
@@ -593,7 +594,7 @@ class WorkspaceNotesIndexer {
       blocks,
       blockMap,
       resolvedLinks: [], // populated by _resolveLinksForFile
-      _contentLines: content.split(/\r?\n/)
+      _content: content
     };
     this.fileIndex.set(filePath, meta);
 
@@ -926,14 +927,12 @@ class WorkspaceNotesIndexer {
       const matchingResolved = (meta.resolvedLinks || []).filter(r => r.targetPath === targetFilePath);
       if (matchingResolved.length === 0) continue;
 
-      let fileLines = meta._contentLines;
-      if (!fileLines) {
-        try {
-          const content = await fs.promises.readFile(sourcePath, 'utf8');
-          fileLines = content.split(/\r?\n/);
-        } catch {
-          fileLines = [];
-        }
+      let fileLines = null;
+      try {
+        const content = await fs.promises.readFile(sourcePath, 'utf8');
+        fileLines = content.split(/\r?\n/);
+      } catch {
+        fileLines = meta._content ? meta._content.split(/\r?\n/) : [];
       }
 
       const snippets = [];
@@ -996,12 +995,12 @@ class WorkspaceNotesIndexer {
       if (sourcePath === targetFilePath) continue;
 
       let content;
-      if (meta._contentLines) {
-        content = meta._contentLines.join('\n');
-      } else {
-        try {
-          content = await fs.promises.readFile(sourcePath, 'utf8');
-        } catch {
+      try {
+        content = await fs.promises.readFile(sourcePath, 'utf8');
+      } catch {
+        if (meta._content) {
+          content = meta._content;
+        } else {
           continue;
         }
       }
