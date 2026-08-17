@@ -155,7 +155,8 @@ class GraphViewManager {
       localDepth: this.localDepth,
       activeNoteTitle: this.activeFilePath ? path.basename(this.activeFilePath, '.md') : '',
       allTags: this._cachedTagList,
-      allCategories: this._cachedCategoryList
+      allCategories: this._cachedCategoryList,
+      excludedTags: Array.from(this.indexer.getExcludedTags())
     });
   }
 
@@ -257,15 +258,26 @@ class GraphViewManager {
       display: flex;
       flex-direction: column;
       gap: 10px;
-      width: 280px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+      width: 290px;
+      max-height: calc(100vh - 32px);
+      overflow-y: auto;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
       z-index: 10;
       transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+
+    .controls-panel::-webkit-scrollbar {
+      width: 4px;
+    }
+    .controls-panel::-webkit-scrollbar-thumb {
+      background: var(--card-border);
+      border-radius: 4px;
     }
 
     .controls-panel.collapsed {
       width: auto;
       padding: 8px 12px;
+      overflow: hidden;
     }
 
     .controls-panel.collapsed .panel-body {
@@ -446,6 +458,36 @@ class GraphViewManager {
       cursor: pointer;
     }
 
+    .accordion-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      cursor: pointer;
+      padding: 4px 0;
+      opacity: 0.8;
+      border-top: 1px solid var(--card-border);
+      padding-top: 8px;
+    }
+
+    .accordion-header:hover {
+      opacity: 1;
+    }
+
+    .accordion-content {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-top: 4px;
+    }
+
+    .accordion-content.collapsed {
+      display: none;
+    }
+
     .btn-row {
       display: flex;
       gap: 6px;
@@ -552,12 +594,26 @@ class GraphViewManager {
 
     <div class="panel-body">
       <div class="input-group">
-        <input type="text" id="search-input" placeholder="Search notes..." />
+        <input type="text" id="search-input" placeholder="Search (-tag:#anime, tag:#work)..." />
       </div>
 
       <div class="input-group">
         <select id="tag-filter">
           <option value="">Filter by Tag: All</option>
+        </select>
+      </div>
+
+      <div class="input-group">
+        <select id="tag-exclude-filter">
+          <option value="">Exclude Tag: None</option>
+        </select>
+      </div>
+
+      <div class="input-group">
+        <select id="label-mode">
+          <option value="smart">Labels: Smart (Hover & Zoom)</option>
+          <option value="hover">Labels: Only On Hover</option>
+          <option value="always">Labels: Always Visible</option>
         </select>
       </div>
 
@@ -583,6 +639,39 @@ class GraphViewManager {
           <input type="checkbox" id="toggle-orphans" checked>
           <span class="slider"></span>
         </label>
+      </div>
+
+      <div class="accordion-header" id="forces-header">
+        <span>Physics Forces</span>
+        <svg id="forces-arrow" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </div>
+
+      <div class="accordion-content collapsed" id="forces-content">
+        <div class="range-row">
+          <div class="range-header">
+            <span>Repulsion Force</span>
+            <span id="repulsion-val">100%</span>
+          </div>
+          <input type="range" id="range-repulsion" min="20" max="300" value="100" />
+        </div>
+
+        <div class="range-row">
+          <div class="range-header">
+            <span>Center Gravity</span>
+            <span id="gravity-val">100%</span>
+          </div>
+          <input type="range" id="range-gravity" min="0" max="300" value="100" />
+        </div>
+
+        <div class="range-row">
+          <div class="range-header">
+            <span>Link Distance</span>
+            <span id="link-dist-val">70px</span>
+          </div>
+          <input type="range" id="range-link-dist" min="20" max="200" value="70" />
+        </div>
       </div>
 
       <div class="btn-row">
@@ -611,11 +700,22 @@ class GraphViewManager {
     // UI Elements
     const searchInput = document.getElementById('search-input');
     const tagFilter = document.getElementById('tag-filter');
+    const tagExcludeFilter = document.getElementById('tag-exclude-filter');
+    const labelModeSelect = document.getElementById('label-mode');
     const toggleLocal = document.getElementById('toggle-local');
     const localDepthContainer = document.getElementById('local-depth-container');
     const rangeDepth = document.getElementById('range-depth');
     const depthVal = document.getElementById('depth-val');
     const toggleOrphans = document.getElementById('toggle-orphans');
+    const forcesHeader = document.getElementById('forces-header');
+    const forcesContent = document.getElementById('forces-content');
+    const forcesArrow = document.getElementById('forces-arrow');
+    const rangeRepulsion = document.getElementById('range-repulsion');
+    const repulsionVal = document.getElementById('repulsion-val');
+    const rangeGravity = document.getElementById('range-gravity');
+    const gravityVal = document.getElementById('gravity-val');
+    const rangeLinkDist = document.getElementById('range-link-dist');
+    const linkDistVal = document.getElementById('link-dist-val');
     const btnResetView = document.getElementById('btn-reset-view');
     const btnTogglePhysics = document.getElementById('btn-toggle-physics');
     const btnTogglePanel = document.getElementById('btn-toggle-panel');
@@ -636,9 +736,17 @@ class GraphViewManager {
     let isLocalMode = false;
     let localDepth = 1;
     let showOrphans = true;
+    let labelMode = 'smart'; // 'smart' | 'hover' | 'always'
     let searchQuery = '';
     let selectedTag = '';
+    let selectedExcludeTag = '';
+    let configExcludedTags = [];
     let physicsRunning = true;
+
+    // Physics multipliers
+    let repulsionMultiplier = 1.0;
+    let gravityMultiplier = 1.0;
+    let userLinkDistance = 70;
 
     // View Transformation (Pan & Zoom)
     let transform = { x: 0, y: 0, scale: 1 };
@@ -647,14 +755,14 @@ class GraphViewManager {
     let hoveredNode = null;
     let draggedNode = null;
 
-    // Render loop control — stops when tab is hidden or idle
+    // Render loop control
     let animationFrameId = null;
     let isPageVisible = true;
     let needsRender = true;
     let physicsSettledFrames = 0;
-    const SETTLE_THRESHOLD = 120; // ~2s of sub-threshold movement = settle
+    const SETTLE_THRESHOLD = 150;
 
-    // Reusable Set for highlight detection — avoids allocation every frame
+    // Reusable Set for highlight detection
     const highlightedNodeIds = new Set();
 
     // Tag Color Palette Generator
@@ -672,6 +780,93 @@ class GraphViewManager {
         hash |= 0;
       }
       return tagColors[Math.abs(hash) % tagColors.length];
+    }
+
+    // --- Search Query Parser ---
+    function parseSearchQuery(query) {
+      if (!query || !query.trim()) return null;
+      const tokens = query.match(/(?:[^\\s"]+|"[^"]*")+/g) || [];
+      const positiveTags = [];
+      const negativeTags = [];
+      const positivePaths = [];
+      const negativePaths = [];
+      const positiveTerms = [];
+      const negativeTerms = [];
+
+      for (let raw of tokens) {
+        const token = raw.replace(/^"|"$/g, '').trim();
+        if (!token) continue;
+
+        if (token.startsWith('-tag:')) {
+          const val = token.slice(5).replace(/^#/, '').toLowerCase();
+          if (val) negativeTags.push(val);
+        } else if (token.startsWith('tag:')) {
+          const val = token.slice(4).replace(/^#/, '').toLowerCase();
+          if (val) positiveTags.push(val);
+        } else if (token.startsWith('-path:')) {
+          const val = token.slice(6).toLowerCase();
+          if (val) negativePaths.push(val);
+        } else if (token.startsWith('path:')) {
+          const val = token.slice(5).toLowerCase();
+          if (val) positivePaths.push(val);
+        } else if (token.startsWith('-') && token.length > 1) {
+          const val = token.slice(1).toLowerCase();
+          if (val) negativeTerms.push(val);
+        } else {
+          positiveTerms.push(token.toLowerCase());
+        }
+      }
+
+      return {
+        positiveTags,
+        negativeTags,
+        positivePaths,
+        negativePaths,
+        positiveTerms,
+        negativeTerms,
+        isEmpty: !positiveTags.length && !negativeTags.length && !positivePaths.length &&
+                 !negativePaths.length && !positiveTerms.length && !negativeTerms.length
+      };
+    }
+
+    function doesNodeMatchSearch(node, parsedSearch) {
+      if (!parsedSearch || parsedSearch.isEmpty) return true;
+
+      const nodeTags = (node.tags || []).map(t => t.toLowerCase());
+      const labelLower = (node.label || '').toLowerCase();
+      const pathLower = (node.relativePath || node.filePath || '').toLowerCase();
+
+      // Negative tag exclusions
+      for (const negTag of parsedSearch.negativeTags) {
+        if (nodeTags.includes(negTag)) return false;
+      }
+
+      // Positive tag inclusions
+      for (const posTag of parsedSearch.positiveTags) {
+        if (!nodeTags.includes(posTag)) return false;
+      }
+
+      // Negative path exclusions
+      for (const negPath of parsedSearch.negativePaths) {
+        if (pathLower.includes(negPath)) return false;
+      }
+
+      // Positive path inclusions
+      for (const posPath of parsedSearch.positivePaths) {
+        if (!pathLower.includes(posPath)) return false;
+      }
+
+      // Negative text exclusions
+      for (const negTerm of parsedSearch.negativeTerms) {
+        if (labelLower.includes(negTerm) || pathLower.includes(negTerm)) return false;
+      }
+
+      // Positive text inclusions
+      for (const posTerm of parsedSearch.positiveTerms) {
+        if (!labelLower.includes(posTerm) && !pathLower.includes(posTerm)) return false;
+      }
+
+      return true;
     }
 
     // Resize Canvas
@@ -709,7 +904,6 @@ class GraphViewManager {
       }
     }
 
-    // Pause render loop when page is hidden (panel not visible)
     document.addEventListener('visibilitychange', () => {
       isPageVisible = !document.hidden;
       if (isPageVisible) {
@@ -724,19 +918,19 @@ class GraphViewManager {
       const width = container.clientWidth;
       const height = container.clientHeight;
 
-      // Assign initial positions proportionally around center if not already set
-      const spreadRadius = Math.max(width, height) * 0.35 * Math.sqrt(Math.max(1, nodes.length / 50));
+      // Use a golden ratio spiral layout for initial distribution so nodes don't start overlapping
+      const spreadRadius = Math.max(width, height) * 0.45 * Math.sqrt(Math.max(1, nodes.length / 40));
       for (let i = 0; i < nodes.length; i++) {
         const node = nodes[i];
         if (node.x === undefined || node.y === undefined) {
-          const angle = (i / Math.max(1, nodes.length)) * 2 * Math.PI;
-          const r = spreadRadius * (0.3 + Math.random() * 0.7);
-          node.x = width / 2 + r * Math.cos(angle);
-          node.y = height / 2 + r * Math.sin(angle);
-          node.vx = (Math.random() - 0.5) * 2;
-          node.vy = (Math.random() - 0.5) * 2;
+          const phi = i * 2.3999632; // golden angle
+          const r = spreadRadius * Math.sqrt(i / Math.max(1, nodes.length));
+          node.x = width / 2 + r * Math.cos(phi) + (Math.random() - 0.5) * 15;
+          node.y = height / 2 + r * Math.sin(phi) + (Math.random() - 0.5) * 15;
+          node.vx = 0;
+          node.vy = 0;
         }
-        node.radius = Math.max(4, Math.min(14, 4 + Math.sqrt(node.linkCount || 1) * 2.5));
+        node.radius = Math.max(3.5, Math.min(14, 3.5 + Math.sqrt(node.linkCount || 0) * 2.0));
       }
       requestRender();
     }
@@ -749,33 +943,39 @@ class GraphViewManager {
       const cx = width / 2;
       const cy = height / 2;
 
-      // Dynamically scale repulsion force based on node count so 2000+ nodes don't explode physics
-      const baseRepulsion = nodes.length > 200
-        ? Math.max(100, 1200 / Math.sqrt(nodes.length / 50))
-        : 1200;
+      // Adaptive center gravity — very gentle for large vaults so nodes spread out into natural clusters
+      const centerGravity = (nodes.length > 500
+        ? Math.max(0.0003, 0.003 / Math.sqrt(nodes.length))
+        : 0.0035) * gravityMultiplier;
 
-      const linkDistance = nodes.length > 500 ? 50 : 75;
-      const linkStrength = 0.04;
-      const centerGravity = 0.008;
+      // Adaptive Coulomb repulsion
+      const baseRepulsion = (nodes.length > 500
+        ? Math.max(350, 2200 / Math.sqrt(nodes.length / 50))
+        : 1400) * repulsionMultiplier;
+
+      const linkDistance = userLinkDistance;
+      const linkStrength = 0.045;
       const damping = 0.88;
 
       // 1. Center gravity force
-      for (let i = 0; i < nodes.length; i++) {
-        const node = nodes[i];
-        if (node === draggedNode) continue;
-        node.vx += (cx - node.x) * centerGravity;
-        node.vy += (cy - node.y) * centerGravity;
+      if (centerGravity > 0) {
+        for (let i = 0; i < nodes.length; i++) {
+          const node = nodes[i];
+          if (node === draggedNode) continue;
+          node.vx += (cx - node.x) * centerGravity;
+          node.vy += (cy - node.y) * centerGravity;
+        }
       }
 
-      // 2. Coulomb Repulsion between nodes (distance-capped for large graphs)
-      const maxDistanceSq = nodes.length > 500 ? 250000 : 900000;
+      // 2. Coulomb Repulsion between nodes (distance-capped for 60fps performance)
+      const maxDistanceSq = nodes.length > 500 ? 160000 : 640000;
       for (let i = 0; i < nodes.length; i++) {
         const n1 = nodes[i];
         for (let j = i + 1; j < nodes.length; j++) {
           const n2 = nodes[j];
           const dx = n2.x - n1.x;
           const dy = n2.y - n1.y;
-          const distSq = dx * dx + dy * dy + 100;
+          const distSq = dx * dx + dy * dy + 150;
           if (distSq > maxDistanceSq) continue;
 
           const dist = Math.sqrt(distSq);
@@ -821,8 +1021,8 @@ class GraphViewManager {
         }
       }
 
-      // 4. Integrate velocity & damping, cap max speed to prevent physics explosions
-      const maxVel = 12;
+      // 4. Velocity integration & damping
+      const maxVel = 10;
       let totalEnergy = 0;
       for (let i = 0; i < nodes.length; i++) {
         const node = nodes[i];
@@ -834,8 +1034,22 @@ class GraphViewManager {
         totalEnergy += node.vx * node.vx + node.vy * node.vy;
       }
 
-      // Return true if physics are still active (not settled)
-      return totalEnergy > 0.01;
+      return totalEnergy > 0.02;
+    }
+
+    // Helper to draw a rounded pill badge
+    function drawPill(ctx, x, y, width, height, radius) {
+      ctx.beginPath();
+      ctx.moveTo(x + radius, y);
+      ctx.lineTo(x + width - radius, y);
+      ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+      ctx.lineTo(x + width, y + height - radius);
+      ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+      ctx.lineTo(x + radius, y + height);
+      ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+      ctx.lineTo(x, y + radius);
+      ctx.quadraticCurveTo(x, y, x + radius, y);
+      ctx.closePath();
     }
 
     // --- Render Loop ---
@@ -854,7 +1068,7 @@ class GraphViewManager {
       ctx.translate(transform.x, transform.y);
       ctx.scale(transform.scale, transform.scale);
 
-      // Build highlighted neighbor set if hovered — reuses existing Set
+      // Build highlighted neighbor set
       highlightedNodeIds.clear();
       if (hoveredNode) {
         highlightedNodeIds.add(hoveredNode.id);
@@ -867,7 +1081,7 @@ class GraphViewManager {
         }
       }
 
-      // Render Links with minimum line width in screen space so they stay visible when zoomed out
+      // Render Links
       const minLineWidth = 0.5 / transform.scale;
       for (let i = 0; i < links.length; i++) {
         const link = links[i];
@@ -884,67 +1098,120 @@ class GraphViewManager {
 
         if (isHighlighted) {
           ctx.strokeStyle = '#cba6f7';
-          ctx.lineWidth = Math.max(minLineWidth * 2, 2 / transform.scale);
+          ctx.lineWidth = Math.max(minLineWidth * 2.2, 2.2 / transform.scale);
         } else if (isDimmed) {
-          ctx.strokeStyle = 'rgba(180, 190, 254, 0.06)';
-          ctx.lineWidth = Math.max(minLineWidth * 0.8, 0.8 / transform.scale);
+          ctx.strokeStyle = 'rgba(180, 190, 254, 0.04)';
+          ctx.lineWidth = Math.max(minLineWidth * 0.8, 0.7 / transform.scale);
         } else {
-          ctx.strokeStyle = 'rgba(180, 190, 254, 0.25)';
+          ctx.strokeStyle = 'rgba(180, 190, 254, 0.22)';
           ctx.lineWidth = Math.max(minLineWidth, 1 / transform.scale);
         }
 
         ctx.stroke();
       }
 
-      // Cache lowered search query outside the node loop
-      const lowerSearch = searchQuery ? searchQuery.toLowerCase() : '';
-
-      // Render Nodes with minimum radius in screen space (2.5px) so nodes NEVER disappear when zoomed out
+      const parsedSearch = parseSearchQuery(searchQuery);
       const minScreenRadius = 2.5;
       const minWorldRadius = minScreenRadius / transform.scale;
 
+      // 1. Draw All Node Dots First
       for (let i = 0; i < nodes.length; i++) {
         const node = nodes[i];
         const isHovered = node === hoveredNode;
         const isConnected = highlightedNodeIds.has(node.id);
-        const matchesSearch = lowerSearch ? node.label.toLowerCase().includes(lowerSearch) : true;
+        const matchesSearch = doesNodeMatchSearch(node, parsedSearch);
         const isDimmed = (hoveredNode && !isConnected) || (!matchesSearch);
 
         const nodeColor = node.isCurrent ? '#f9e2af' : getTagColor(node.tags);
-        const baseRadius = Math.max(node.radius || 4, minWorldRadius);
-        const radius = isHovered ? baseRadius * 1.3 : baseRadius;
+        const baseRadius = Math.max(node.radius || 3.5, minWorldRadius);
+        const radius = isHovered ? baseRadius * 1.35 : baseRadius;
 
         ctx.beginPath();
         ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI);
 
         if (isDimmed) {
-          ctx.fillStyle = 'rgba(108, 112, 134, 0.2)';
+          ctx.fillStyle = 'rgba(108, 112, 134, 0.18)';
         } else {
           ctx.fillStyle = nodeColor;
         }
         ctx.fill();
 
-        // Node outline/glow
+        // Node outline/glow for hovered or current
         if (isHovered || node.isCurrent) {
-          ctx.lineWidth = Math.max(1 / transform.scale, (isHovered ? 3 : 2) / transform.scale);
+          ctx.lineWidth = Math.max(1 / transform.scale, (isHovered ? 2.5 : 1.8) / transform.scale);
           ctx.strokeStyle = isHovered ? '#ffffff' : '#f9e2af';
           ctx.stroke();
         }
+      }
 
-        // Node Label
-        const shouldShowLabel = transform.scale > 0.6 || isHovered || isConnected || node.isCurrent || (searchQuery && matchesSearch);
-        if (shouldShowLabel && !isDimmed) {
-          ctx.font = Math.max(10, Math.round(12 / Math.sqrt(transform.scale))) + 'px sans-serif';
-          ctx.fillStyle = isHovered ? '#ffffff' : 'rgba(255, 255, 255, 0.85)';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'top';
-          ctx.fillText(node.label, node.x, node.y + radius + 4);
+      // 2. Draw Node Labels (Level of Detail Decluttering)
+      const fontWorldSize = Math.max(9, Math.min(13, 11 / transform.scale));
+      ctx.font = '500 ' + fontWorldSize + 'px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+
+      for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i];
+        const isHovered = node === hoveredNode;
+        const isConnected = highlightedNodeIds.has(node.id);
+        const matchesSearch = doesNodeMatchSearch(node, parsedSearch);
+        const isDimmed = (hoveredNode && !isConnected) || (!matchesSearch);
+
+        if (isDimmed) continue;
+
+        let shouldShowLabel = false;
+        if (isHovered || isConnected || node.isCurrent || (parsedSearch && !parsedSearch.isEmpty && matchesSearch)) {
+          shouldShowLabel = true;
+        } else if (labelMode === 'always') {
+          shouldShowLabel = true;
+        } else if (labelMode === 'smart') {
+          shouldShowLabel = transform.scale >= 1.05;
+        }
+
+        if (!shouldShowLabel) continue;
+
+        const baseRadius = Math.max(node.radius || 3.5, minWorldRadius);
+        const radius = isHovered ? baseRadius * 1.35 : baseRadius;
+        const labelY = node.y + radius + (3 / transform.scale);
+
+        // Truncate overly long labels
+        let displayLabel = node.label;
+        if (displayLabel.length > 32 && !isHovered) {
+          displayLabel = displayLabel.slice(0, 30) + '…';
+        }
+
+        if (isHovered || node.isCurrent) {
+          // Render a prominent pill badge background for active/hovered node
+          const textMetrics = ctx.measureText(displayLabel);
+          const padX = 6 / transform.scale;
+          const padY = 2 / transform.scale;
+          const pillW = textMetrics.width + padX * 2;
+          const pillH = fontWorldSize + padY * 2;
+          const pillX = node.x - pillW / 2;
+          const pillY = labelY;
+
+          ctx.fillStyle = 'rgba(17, 17, 27, 0.9)';
+          ctx.strokeStyle = isHovered ? '#89b4fa' : '#f9e2af';
+          ctx.lineWidth = 1 / transform.scale;
+          drawPill(ctx, pillX, pillY, pillW, pillH, 4 / transform.scale);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(displayLabel, node.x, labelY + padY);
+        } else {
+          // Crisp text with dark outline shadow
+          ctx.strokeStyle = 'rgba(17, 17, 27, 0.85)';
+          ctx.lineWidth = 2.5 / transform.scale;
+          ctx.strokeText(displayLabel, node.x, labelY);
+
+          ctx.fillStyle = isConnected ? '#ffffff' : 'rgba(205, 214, 244, 0.88)';
+          ctx.fillText(displayLabel, node.x, labelY);
         }
       }
 
       ctx.restore();
 
-      // Decide whether to continue the render loop
       const shouldContinue = physicsActive || draggedNode || hoveredNode || isDraggingCanvas || needsRender;
       needsRender = false;
 
@@ -954,7 +1221,6 @@ class GraphViewManager {
       } else {
         physicsSettledFrames++;
         if (physicsSettledFrames < SETTLE_THRESHOLD) {
-          // Keep running briefly to detect full settling
           animationFrameId = requestAnimationFrame(renderLoop);
         }
       }
@@ -985,8 +1251,13 @@ class GraphViewManager {
     }
 
     // --- Interactive Mouse Handlers ---
+    let mouseDownPos = null;
+    let hasDragged = false;
+
     container.addEventListener('mousedown', e => {
       if (e.button !== 0) return;
+      mouseDownPos = { x: e.clientX, y: e.clientY };
+      hasDragged = false;
       const rect = canvas.getBoundingClientRect();
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
@@ -1005,6 +1276,16 @@ class GraphViewManager {
     });
 
     window.addEventListener('mousemove', e => {
+      if (mouseDownPos && !hasDragged) {
+        const dist = Math.hypot(e.clientX - mouseDownPos.x, e.clientY - mouseDownPos.y);
+        if (dist > 5) {
+          hasDragged = true;
+          if (hoveredNode) {
+            hideTooltip();
+          }
+        }
+      }
+
       const rect = canvas.getBoundingClientRect();
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
@@ -1048,9 +1329,10 @@ class GraphViewManager {
         draggedNode = null;
         requestRender();
       }
+      mouseDownPos = null;
     });
 
-    // Zoom on Wheel with wide scale limits (0.0005 to 20.0) so large graphs don't snap or lose nodes
+    // Zoom on Wheel with wide scale limits (0.0005 to 20.0)
     container.addEventListener('wheel', e => {
       e.preventDefault();
       const rect = canvas.getBoundingClientRect();
@@ -1069,8 +1351,12 @@ class GraphViewManager {
       requestRender();
     }, { passive: false });
 
-    // Click to open note
+    // Click to open note (only if not dragging)
     container.addEventListener('click', e => {
+      if (hasDragged) {
+        hasDragged = false;
+        return;
+      }
       const rect = canvas.getBoundingClientRect();
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
@@ -1129,12 +1415,30 @@ class GraphViewManager {
       nodeMap.clear();
       let filtered = rawNodes;
 
-      if (!showOrphans) {
-        filtered = filtered.filter(n => (n.linkCount || 0) > 0 || n.isCurrent);
+      // 1. Filter out workspace configured excludedTags
+      if (configExcludedTags && configExcludedTags.length > 0) {
+        const exclSet = new Set(configExcludedTags.map(t => t.toLowerCase()));
+        filtered = filtered.filter(n => {
+          if (!n.tags || n.tags.length === 0) return true;
+          return !n.tags.some(t => exclSet.has(t.toLowerCase()));
+        });
       }
 
+      // 2. Filter out UI excluded tag
+      if (selectedExcludeTag) {
+        const excl = selectedExcludeTag.toLowerCase();
+        filtered = filtered.filter(n => !n.tags || !n.tags.map(t => t.toLowerCase()).includes(excl));
+      }
+
+      // 3. Filter by UI included tag
       if (selectedTag) {
-        filtered = filtered.filter(n => n.tags && n.tags.includes(selectedTag));
+        const incl = selectedTag.toLowerCase();
+        filtered = filtered.filter(n => n.tags && n.tags.map(t => t.toLowerCase()).includes(incl));
+      }
+
+      // 4. Filter orphans
+      if (!showOrphans) {
+        filtered = filtered.filter(n => (n.linkCount || 0) > 0 || n.isCurrent);
       }
 
       nodes = filtered;
@@ -1198,6 +1502,16 @@ class GraphViewManager {
       applyFilters();
     });
 
+    tagExcludeFilter.addEventListener('change', e => {
+      selectedExcludeTag = e.target.value;
+      applyFilters();
+    });
+
+    labelModeSelect.addEventListener('change', e => {
+      labelMode = e.target.value;
+      requestRender();
+    });
+
     toggleOrphans.addEventListener('change', e => {
       showOrphans = e.target.checked;
       applyFilters();
@@ -1224,6 +1538,34 @@ class GraphViewManager {
       });
     });
 
+    // Forces Collapsible
+    forcesHeader.addEventListener('click', () => {
+      forcesContent.classList.toggle('collapsed');
+      forcesArrow.innerHTML = forcesContent.classList.contains('collapsed')
+        ? '<polyline points="6 9 12 15 18 9"/>'
+        : '<polyline points="18 15 12 9 6 15"/>';
+    });
+
+    rangeRepulsion.addEventListener('input', e => {
+      const val = parseInt(e.target.value, 10);
+      repulsionMultiplier = val / 100;
+      repulsionVal.textContent = val + '%';
+      requestRender();
+    });
+
+    rangeGravity.addEventListener('input', e => {
+      const val = parseInt(e.target.value, 10);
+      gravityMultiplier = val / 100;
+      gravityVal.textContent = val + '%';
+      requestRender();
+    });
+
+    rangeLinkDist.addEventListener('input', e => {
+      userLinkDistance = parseInt(e.target.value, 10);
+      linkDistVal.textContent = userLinkDistance + 'px';
+      requestRender();
+    });
+
     btnResetView.addEventListener('click', fitView);
 
     btnTogglePhysics.addEventListener('click', () => {
@@ -1238,7 +1580,7 @@ class GraphViewManager {
       controlsPanel.classList.toggle('collapsed');
       btnTogglePanel.innerHTML = controlsPanel.classList.contains('collapsed')
         ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>'
-        : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>';
+        : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/>';
     });
 
     // --- Message Receiver from Extension Host ---
@@ -1248,6 +1590,7 @@ class GraphViewManager {
         const data = message.data || { nodes: [], links: [] };
         rawNodes = data.nodes || [];
         rawLinks = data.links || [];
+        configExcludedTags = message.excludedTags || [];
 
         isLocalMode = !!message.isLocal;
         toggleLocal.checked = isLocalMode;
@@ -1260,17 +1603,27 @@ class GraphViewManager {
           depthVal.textContent = localDepth;
         }
 
-        // Populate Tag Filter Dropdown
+        // Populate Tag Filter & Exclude Dropdowns
         const currentTag = tagFilter.value;
+        const currentExcludeTag = tagExcludeFilter.value;
+
         tagFilter.innerHTML = '<option value="">Filter by Tag: All</option>';
+        tagExcludeFilter.innerHTML = '<option value="">Exclude Tag: None</option>';
+
         if (message.allTags) {
           for (let i = 0; i < message.allTags.length; i++) {
             const tag = message.allTags[i];
-            const opt = document.createElement('option');
-            opt.value = tag;
-            opt.textContent = '#' + tag;
-            if (tag === currentTag) opt.selected = true;
-            tagFilter.appendChild(opt);
+            const opt1 = document.createElement('option');
+            opt1.value = tag;
+            opt1.textContent = '#' + tag;
+            if (tag === currentTag) opt1.selected = true;
+            tagFilter.appendChild(opt1);
+
+            const opt2 = document.createElement('option');
+            opt2.value = tag;
+            opt2.textContent = '#' + tag;
+            if (tag === currentExcludeTag) opt2.selected = true;
+            tagExcludeFilter.appendChild(opt2);
           }
         }
 

@@ -90,6 +90,21 @@ const {
   FrontmatterCompletionProvider
 } = require('../src/frontmatter');
 
+const {
+  detectGrowthStage,
+  detectPublishStatus,
+  setGrowthStageInMarkdown,
+  setPublishStatusInMarkdown,
+  auditGarden
+} = require('../src/digitalGarden');
+
+const {
+  OBSIDIAN_CALLOUT_TYPES,
+  parseCalloutHeader,
+  formatCalloutBlock,
+  markdownItCalloutsPlugin
+} = require('../src/callouts');
+
 let testsPassed = 0;
 let testsFailed = 0;
 
@@ -310,6 +325,29 @@ test('getGraphData produces correct global nodes, links, and local subgraph', ()
   const nodeLabels2 = localGraphDepth2.nodes.map(n => n.label);
   assert.strictEqual(nodeLabels2.includes('Note D'), true);
   assert.strictEqual(nodeLabels2.includes('Orphan Note'), false);
+});
+
+test('getAllTags respects excludedTags configuration', () => {
+  const indexer = new WorkspaceNotesIndexer();
+  indexer.indexFileContent('/workspace/note1.md', `# Note 1\n#work #anime #journal`);
+  indexer.indexFileContent('/workspace/note2.md', `# Note 2\n#archive #work`);
+
+  const allTags = indexer.getAllTags();
+  assert.strictEqual(allTags.some(t => t.tag === 'work'), true);
+  assert.strictEqual(allTags.some(t => t.tag === 'anime'), true);
+
+  // Mock getExcludedTags returning Set { 'anime', 'archive' }
+  indexer.getExcludedTags = () => new Set(['anime', 'archive']);
+  indexer._invalidateCache();
+
+  const filteredTags = indexer.getAllTags();
+  assert.strictEqual(filteredTags.some(t => t.tag === 'work'), true);
+  assert.strictEqual(filteredTags.some(t => t.tag === 'journal'), true);
+  assert.strictEqual(filteredTags.some(t => t.tag === 'anime'), false);
+  assert.strictEqual(filteredTags.some(t => t.tag === 'archive'), false);
+
+  const fullTags = indexer.getAllTags(true);
+  assert.strictEqual(fullTags.some(t => t.tag === 'anime'), true);
 });
 
 // --- Backlinks & Unlinked Mentions Tests ---
@@ -776,7 +814,223 @@ test('FrontmatterCompletionProvider provides keys, tags, wikilinks, dates, and v
   assert.strictEqual(dateCompletions.length >= 3, true);
 });
 
+// --- Digital Garden Suite Tests ---
+console.log('\nDigital Garden Suite:');
+
+test('detectGrowthStage identifies seedling, budding, and evergreen from frontmatter and tags', () => {
+  // 1. From frontmatter property 'growth'
+  const note1 = { properties: new Map([['growth', 'seedling']]), tags: new Set() };
+  const stage1 = detectGrowthStage(note1);
+  assert.strictEqual(stage1.key, 'seedling');
+  assert.strictEqual(stage1.icon, '🌱');
+
+  // 2. From frontmatter property 'stage'
+  const note2 = { properties: new Map([['stage', 'budding']]), tags: new Set() };
+  const stage2 = detectGrowthStage(note2);
+  assert.strictEqual(stage2.key, 'budding');
+  assert.strictEqual(stage2.icon, '🌿');
+
+  // 3. From frontmatter property 'status'
+  const note3 = { properties: new Map([['status', 'evergreen']]), tags: new Set() };
+  const stage3 = detectGrowthStage(note3);
+  assert.strictEqual(stage3.key, 'evergreen');
+  assert.strictEqual(stage3.icon, '🌲');
+
+  // 4. From tag fallback #seedling
+  const note4 = { properties: new Map(), tags: new Set(['seedling', 'philosophy']) };
+  const stage4 = detectGrowthStage(note4);
+  assert.strictEqual(stage4.key, 'seedling');
+
+  // 5. Unspecified
+  const note5 = { properties: new Map(), tags: new Set(['random']) };
+  const stage5 = detectGrowthStage(note5);
+  assert.strictEqual(stage5.key, 'unspecified');
+});
+
+test('detectPublishStatus handles publish_external, publish, draft flags, and tag fallbacks', () => {
+  // 1. publish_external: true
+  const note1 = { properties: new Map([['publish_external', true]]) };
+  assert.strictEqual(detectPublishStatus(note1).isPublished, true);
+
+  // 2. publish_external: false
+  const note2 = { properties: new Map([['publish_external', false]]) };
+  assert.strictEqual(detectPublishStatus(note2).isPublished, false);
+
+  // 3. draft: true overrides publish: true
+  const note3 = { properties: new Map([['draft', true], ['publish', true]]) };
+  assert.strictEqual(detectPublishStatus(note3).isPublished, false);
+
+  // 4. Tag fallback #published
+  const note4 = { properties: new Map(), tags: new Set(['published']) };
+  assert.strictEqual(detectPublishStatus(note4).isPublished, true);
+
+  // 5. Tag fallback #private
+  const note5 = { properties: new Map(), tags: new Set(['private']) };
+  assert.strictEqual(detectPublishStatus(note5).isPublished, false);
+});
+
+test('setGrowthStageInMarkdown and setPublishStatusInMarkdown mutate frontmatter accurately', () => {
+  const original = `---\ntitle: Note A\npublish_external: false\n---\n# Content`;
+  
+  // Update growth
+  const withGrowth = setGrowthStageInMarkdown(original, 'evergreen');
+  assert.strictEqual(withGrowth.includes('growth: evergreen'), true);
+
+  // Update publish
+  const withPub = setPublishStatusInMarkdown(withGrowth, true);
+  assert.strictEqual(withPub.includes('publish_external: true'), true);
+
+  // Apply on note without frontmatter
+  const noFm = `# Header\nBody`;
+  const addedFm = setPublishStatusInMarkdown(noFm, true, 'publish_external');
+  assert.strictEqual(addedFm.startsWith('---\npublish_external: true\n---'), true);
+});
+
+test('auditGarden calculates growth breakdown, publish breakdown, broken links, privacy leaks, and orphans', () => {
+  const indexer = new WorkspaceNotesIndexer();
+  
+  // Note 1: Public, Evergreen, links to Note 2 (Private) and NonExistent (Broken)
+  indexer.indexFileContent('/vault/note1.md', `---\ntitle: Note 1\npublish_external: true\ngrowth: evergreen\n---\n[[note2]] and [[MissingNote]]`);
+  
+  // Note 2: Private, Budding, links to Note 3
+  indexer.indexFileContent('/vault/note2.md', `---\ntitle: Note 2\npublish_external: false\ngrowth: budding\n---\n[[note3]]`);
+
+  // Note 3: Public, Seedling, dead end (no outgoing links)
+  indexer.indexFileContent('/vault/note3.md', `---\ntitle: Note 3\npublish_external: true\ngrowth: seedling\n---\nEnd of line.`);
+
+  // Note 4: Private, Unspecified, Orphan (no incoming, no outgoing)
+  indexer.indexFileContent('/vault/note4.md', `---\ntitle: Note 4\npublish_external: false\n---\nIsolated note.`);
+
+  const audit = auditGarden(indexer, {
+    growthProperty: 'growth',
+    publishProperty: 'publish_external'
+  });
+
+  assert.strictEqual(audit.totalNotes, 4);
+  assert.strictEqual(audit.growth.evergreen.length, 1);
+  assert.strictEqual(audit.growth.budding.length, 1);
+  assert.strictEqual(audit.growth.seedling.length, 1);
+  assert.strictEqual(audit.growth.unspecified.length, 1);
+
+  assert.strictEqual(audit.publishing.published.length, 2);
+  assert.strictEqual(audit.publishing.private.length, 2);
+
+  // Broken link check: MissingNote
+  assert.strictEqual(audit.brokenLinks.length, 1);
+  assert.strictEqual(audit.brokenLinks[0].target, 'MissingNote');
+
+  // Privacy leak check: Note 1 (Public) links to Note 2 (Private)
+  assert.strictEqual(audit.privacyLeaks.length, 1);
+  assert.strictEqual(audit.privacyLeaks[0].sourceTitle, 'Note 1');
+  assert.strictEqual(audit.privacyLeaks[0].targetTitle, 'Note 2');
+
+  // Orphan note check: Note 4
+  assert.strictEqual(audit.orphanNotes.length, 1);
+  assert.strictEqual(audit.orphanNotes[0].title, 'Note 4');
+
+  // Dead end check: Note 3
+  assert.strictEqual(audit.deadEnds.length, 1);
+  assert.strictEqual(audit.deadEnds[0].title, 'Note 3');
+
+  // Health score calculated
+  assert.strictEqual(typeof audit.healthScore, 'number');
+  assert.strictEqual(audit.healthScore < 100, true);
+});
+
+// --- Obsidian Callouts Tests ---
+console.log('\nObsidian Callouts & Markdown-it Rendering:');
+
+test('OBSIDIAN_CALLOUT_TYPES defines standard Obsidian callout categories and styling', () => {
+  assert.strictEqual(Boolean(OBSIDIAN_CALLOUT_TYPES.note), true);
+  assert.strictEqual(Boolean(OBSIDIAN_CALLOUT_TYPES.tip), true);
+  assert.strictEqual(Boolean(OBSIDIAN_CALLOUT_TYPES.warning), true);
+  assert.strictEqual(Boolean(OBSIDIAN_CALLOUT_TYPES.danger), true);
+  assert.strictEqual(Boolean(OBSIDIAN_CALLOUT_TYPES.quote), true);
+});
+
+test('parseCalloutHeader recognizes standard, collapsible, and titled callouts', () => {
+  const header1 = parseCalloutHeader('> [!note]');
+  assert.strictEqual(header1.isCallout, true);
+  assert.strictEqual(header1.type, 'note');
+  assert.strictEqual(header1.fold, null);
+  assert.strictEqual(header1.title, '');
+
+  const header2 = parseCalloutHeader('> [!tip]+ Pro Tips for Gardeners');
+  assert.strictEqual(header2.isCallout, true);
+  assert.strictEqual(header2.type, 'tip');
+  assert.strictEqual(header2.fold, '+');
+  assert.strictEqual(header2.title, 'Pro Tips for Gardeners');
+
+  const header3 = parseCalloutHeader('> [!warning]- Spoiler Warning');
+  assert.strictEqual(header3.isCallout, true);
+  assert.strictEqual(header3.type, 'warning');
+  assert.strictEqual(header3.fold, '-');
+  assert.strictEqual(header3.title, 'Spoiler Warning');
+
+  const nonCallout = parseCalloutHeader('> Regular quote line');
+  assert.strictEqual(nonCallout, null);
+});
+
+test('formatCalloutBlock wraps content properly with header and folding markers', () => {
+  const block1 = formatCalloutBlock('Line 1\nLine 2', 'info', 'My Info', '+');
+  assert.strictEqual(block1.includes('> [!info]+ My Info'), true);
+  assert.strictEqual(block1.includes('> Line 1\n> Line 2'), true);
+
+  const blockEmpty = formatCalloutBlock('', 'danger');
+  assert.strictEqual(blockEmpty, '> [!danger]\n> ');
+});
+
+test('markdownItCalloutsPlugin transforms callouts into styled HTML containers and details tags', () => {
+  // Simple mock of markdown-it environment
+  const mockMd = {
+    core: {
+      ruler: {
+        after: (afterName, ruleName, fn) => {
+          mockMd._rule = fn;
+        }
+      }
+    },
+    renderer: {
+      rules: {}
+    },
+    utils: {
+      escapeHtml: s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    }
+  };
+
+  markdownItCalloutsPlugin(mockMd);
+
+  // Test blockquote open rule
+  const tokenNormal = {
+    type: 'blockquote_open',
+    callout: {
+      type: 'note',
+      meta: { color: '#0284c7', icon: '📝', label: 'Note' },
+      displayTitle: 'Note',
+      fold: null
+    }
+  };
+  const htmlNormal = mockMd.renderer.rules.blockquote_open([tokenNormal], 0, {}, {}, {});
+  assert.strictEqual(htmlNormal.includes('class="obsidian-callout callout-note"'), true);
+  assert.strictEqual(htmlNormal.includes('<span class="callout-title">Note</span>'), true);
+
+  const tokenCollapsible = {
+    type: 'blockquote_open',
+    callout: {
+      type: 'tip',
+      meta: { color: '#10b981', icon: '💡', label: 'Tip' },
+      displayTitle: 'Custom Tip',
+      fold: '+'
+    }
+  };
+  const htmlCollapsible = mockMd.renderer.rules.blockquote_open([tokenCollapsible], 0, {}, {}, {});
+  assert.strictEqual(htmlCollapsible.startsWith('<details'), true);
+  assert.strictEqual(htmlCollapsible.includes('open'), true);
+  assert.strictEqual(htmlCollapsible.includes('Custom Tip'), true);
+});
+
 console.log(`\nResults: ${testsPassed} passed, ${testsFailed} failed.`);
 if (testsFailed > 0) {
   process.exit(1);
 }
+

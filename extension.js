@@ -37,6 +37,20 @@ const {
   syncTitleWithFilenameCommand
 } = require('./src/frontmatter');
 
+const {
+  DigitalGardenTreeDataProvider,
+  DigitalGardenStatusBarManager,
+  DigitalGardenDiagnosticsProvider,
+  togglePublishStatusCommand,
+  setGrowthStageCommand,
+  runGardenAuditCommand
+} = require('./src/digitalGarden');
+
+const {
+  insertCalloutCommand,
+  CalloutEditorDecorator
+} = require('./src/callouts');
+
 const { registerMarkdownItWikilinks } = require('./src/markdownItPlugin');
 
 let indexer = null;
@@ -82,14 +96,52 @@ async function activate(context) {
   const backlinksTreeDataProvider = new BacklinksTreeDataProvider(indexer);
   const tagsTreeDataProvider = new TagsTreeDataProvider(indexer);
   const categoriesTreeDataProvider = new CategoriesTreeDataProvider(indexer);
+  const digitalGardenTreeDataProvider = new DigitalGardenTreeDataProvider(indexer);
+
+  // Digital Garden UI & Editor Enhancements
+  const digitalGardenStatusBarManager = new DigitalGardenStatusBarManager(indexer);
+  const digitalGardenDiagnosticsProvider = new DigitalGardenDiagnosticsProvider(indexer);
+  const calloutEditorDecorator = new CalloutEditorDecorator();
+
+  // Trigger initial decorations & diagnostics for active editor
+  if (vscode.window.activeTextEditor) {
+    calloutEditorDecorator.updateDecorations(vscode.window.activeTextEditor);
+    digitalGardenDiagnosticsProvider.updateDiagnostics(vscode.window.activeTextEditor.document);
+  }
+
+  // Active editor change listener
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor(editor => {
+      digitalGardenStatusBarManager.update();
+      if (editor) {
+        calloutEditorDecorator.triggerUpdate(editor);
+        digitalGardenDiagnosticsProvider.triggerUpdate(editor.document);
+      }
+    }),
+    vscode.workspace.onDidChangeTextDocument(event => {
+      const activeEditor = vscode.window.activeTextEditor;
+      if (activeEditor && activeEditor.document === event.document) {
+        calloutEditorDecorator.triggerUpdate(activeEditor);
+        digitalGardenDiagnosticsProvider.triggerUpdate(event.document);
+      }
+    }),
+    vscode.workspace.onDidCloseTextDocument(doc => {
+      digitalGardenDiagnosticsProvider.clear(doc.uri);
+    })
+  );
 
   context.subscriptions.push(
     vscode.window.registerTreeDataProvider('obsidian-notes-backlinks', backlinksTreeDataProvider),
     vscode.window.registerTreeDataProvider('obsidian-notes-tags', tagsTreeDataProvider),
     vscode.window.registerTreeDataProvider('obsidian-notes-categories', categoriesTreeDataProvider),
+    vscode.window.registerTreeDataProvider('obsidian-notes-digital-garden', digitalGardenTreeDataProvider),
     backlinksTreeDataProvider,
     tagsTreeDataProvider,
-    categoriesTreeDataProvider
+    categoriesTreeDataProvider,
+    digitalGardenTreeDataProvider,
+    digitalGardenStatusBarManager,
+    digitalGardenDiagnosticsProvider,
+    calloutEditorDecorator
   );
 
   // Register Commands
@@ -104,6 +156,15 @@ async function activate(context) {
     vscode.commands.registerCommand('obsidian-notes.renameProperty', () => renamePropertyWorkspaceCommand(indexer)),
     vscode.commands.registerCommand('obsidian-notes.convertInlineTagsToFrontmatter', () => convertInlineTagsToFrontmatterCommand(indexer)),
     vscode.commands.registerCommand('obsidian-notes.syncTitleWithFilename', () => syncTitleWithFilenameCommand()),
+
+    // Digital Garden Suite
+    vscode.commands.registerCommand('obsidian-notes.togglePublishStatus', () => togglePublishStatusCommand(indexer, digitalGardenStatusBarManager, digitalGardenTreeDataProvider)),
+    vscode.commands.registerCommand('obsidian-notes.setGrowthStage', () => setGrowthStageCommand(indexer, digitalGardenStatusBarManager, digitalGardenTreeDataProvider)),
+    vscode.commands.registerCommand('obsidian-notes.runGardenAudit', () => runGardenAuditCommand(indexer)),
+    vscode.commands.registerCommand('obsidian-notes.refreshDigitalGarden', () => digitalGardenTreeDataProvider.refresh()),
+
+    // Obsidian Callouts
+    vscode.commands.registerCommand('obsidian-notes.insertCallout', () => insertCalloutCommand()),
 
     // Graph View
     vscode.commands.registerCommand('obsidian-notes.openGraphView', () => graphViewManager.openGraphView(false)),
@@ -139,6 +200,7 @@ async function activate(context) {
     // Index & Refresh
     vscode.commands.registerCommand('obsidian-notes.refreshIndex', () => {
       indexer.rebuildIndex();
+      digitalGardenTreeDataProvider.refresh();
       vscode.window.showInformationMessage('Obsidian Notes: Refreshed workspace index.');
     }),
 

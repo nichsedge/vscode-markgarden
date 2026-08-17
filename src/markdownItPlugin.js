@@ -54,10 +54,14 @@ function parseWikilinkTargetForMarkdownIt(raw) {
   };
 }
 
+const { markdownItCalloutsPlugin } = require('./callouts');
+
 /**
- * Registers Obsidian Wikilinks & Embeds plugin into a markdown-it instance.
+ * Registers Obsidian Wikilinks, Embeds, and Callouts plugin into a markdown-it instance.
  */
 function registerMarkdownItWikilinks(md) {
+  markdownItCalloutsPlugin(md);
+
   md.core.ruler.after('inline', 'obsidian_wikilinks', state => {
     const tokens = state.tokens;
 

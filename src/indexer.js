@@ -872,19 +872,43 @@ class WorkspaceNotesIndexer {
   }
 
   /**
+   * Returns a normalized Set of excluded tags from workspace configuration.
+   */
+  getExcludedTags() {
+    try {
+      const config = vscode.workspace.getConfiguration('obsidian-notes');
+      const excluded = config.get('excludedTags', []);
+      if (Array.isArray(excluded)) {
+        return new Set(excluded.map(t => String(t).replace(/^#/, '').toLowerCase().trim()).filter(Boolean));
+      }
+    } catch {
+      // ignore
+    }
+    return new Set();
+  }
+
+  /**
    * Get all indexed tags and their note counts.
    * Returns cached sorted results when the index hasn't changed.
+   * @param {boolean} includeExcluded - Whether to include tags configured in obsidian-notes.excludedTags
    */
-  getAllTags() {
-    if (this._cachedTags) return this._cachedTags;
+  getAllTags(includeExcluded = false) {
+    if (this._cachedTags && !includeExcluded) return this._cachedTags;
 
-    this._cachedTags = Array.from(this.tagIndex.entries()).map(([tag, files]) => ({
-      tag,
-      count: files.size,
-      files: Array.from(files)
-    })).sort((a, b) => a.tag.localeCompare(b.tag));
+    const excluded = includeExcluded ? new Set() : this.getExcludedTags();
 
-    return this._cachedTags;
+    const result = Array.from(this.tagIndex.entries())
+      .filter(([tag]) => !excluded.has(tag.toLowerCase()))
+      .map(([tag, files]) => ({
+        tag,
+        count: files.size,
+        files: Array.from(files)
+      })).sort((a, b) => a.tag.localeCompare(b.tag));
+
+    if (!includeExcluded) {
+      this._cachedTags = result;
+    }
+    return result;
   }
 
   /**

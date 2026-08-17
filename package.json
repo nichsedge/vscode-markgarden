@@ -65,6 +65,10 @@
         {
           "id": "obsidian-notes-categories",
           "name": "Categories"
+        },
+        {
+          "id": "obsidian-notes-digital-garden",
+          "name": "Digital Garden"
         }
       ]
     },
@@ -190,6 +194,36 @@
         "command": "obsidian-notes.syncTitleWithFilename",
         "title": "Sync Note Title with Filename",
         "category": "Obsidian Notes"
+      },
+      {
+        "command": "obsidian-notes.togglePublishStatus",
+        "title": "Toggle Publish Status",
+        "category": "Obsidian Notes",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "obsidian-notes.setGrowthStage",
+        "title": "Set Growth Stage (🌱/🌿/🌲)",
+        "category": "Obsidian Notes",
+        "icon": "$(symbol-event)"
+      },
+      {
+        "command": "obsidian-notes.runGardenAudit",
+        "title": "Run Digital Garden Audit",
+        "category": "Obsidian Notes",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "obsidian-notes.refreshDigitalGarden",
+        "title": "Refresh Digital Garden",
+        "category": "Obsidian Notes",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "obsidian-notes.insertCallout",
+        "title": "Insert Obsidian Callout / Admonition",
+        "category": "Obsidian Notes",
+        "icon": "$(notebook)"
       }
     ],
     "menus": {
@@ -225,6 +259,16 @@
           "command": "obsidian-notes.refreshIndex",
           "when": "view == obsidian-notes-tags || view == obsidian-notes-categories",
           "group": "navigation@2"
+        },
+        {
+          "command": "obsidian-notes.refreshDigitalGarden",
+          "when": "view == obsidian-notes-digital-garden",
+          "group": "navigation@1"
+        },
+        {
+          "command": "obsidian-notes.runGardenAudit",
+          "when": "view == obsidian-notes-digital-garden",
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [
@@ -246,9 +290,24 @@
       ],
       "editor/context": [
         {
+          "command": "obsidian-notes.insertCallout",
+          "when": "editorTextFocus && editorLangId == markdown",
+          "group": "1_modification@1"
+        },
+        {
+          "command": "obsidian-notes.togglePublishStatus",
+          "when": "editorTextFocus && editorLangId == markdown",
+          "group": "1_modification@2"
+        },
+        {
+          "command": "obsidian-notes.setGrowthStage",
+          "when": "editorTextFocus && editorLangId == markdown",
+          "group": "1_modification@3"
+        },
+        {
           "command": "obsidian-notes.extractSelectionToNote",
           "when": "editorHasSelection && editorTextFocus && editorLangId == markdown",
-          "group": "1_modification"
+          "group": "1_modification@4"
         },
         {
           "command": "obsidian-notes.openLinkAtCursor",
@@ -277,6 +336,18 @@
         "command": "obsidian-notes.insertTemplate",
         "key": "ctrl+alt+t",
         "mac": "cmd+alt+t"
+      },
+      {
+        "command": "obsidian-notes.insertCallout",
+        "key": "ctrl+alt+c",
+        "mac": "cmd+alt+c",
+        "when": "editorTextFocus && editorLangId == markdown"
+      },
+      {
+        "command": "obsidian-notes.togglePublishStatus",
+        "key": "ctrl+alt+p",
+        "mac": "cmd+alt+p",
+        "when": "editorTextFocus && editorLangId == markdown"
       },
       {
         "command": "obsidian-notes.openLinkAtCursor",
@@ -357,6 +428,14 @@
           "default": "frontmatter",
           "description": "Default placement style when adding tags: 'frontmatter' (YAML frontmatter) or 'inline' (#tag at end of file)."
         },
+        "obsidian-notes.excludedTags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "List of tags to exclude from Graph View, Tag tree view, and tag autocompletion (e.g. ['archive', 'daily', 'anime'])."
+        },
         "obsidian-notes.excludedFolders": {
           "type": "array",
           "items": {
@@ -407,8 +486,34 @@
             "summary"
           ],
           "description": "List of default property keys suggested in frontmatter completion."
+        },
+        "obsidian-notes.digitalGarden.publishProperty": {
+          "type": "string",
+          "default": "publish_external",
+          "description": "Frontmatter property key used to determine if a note is published (e.g. 'publish_external', 'publish', 'published')."
+        },
+        "obsidian-notes.digitalGarden.growthProperty": {
+          "type": "string",
+          "default": "growth",
+          "description": "Frontmatter property key used for note growth stages: seedling 🌱, budding 🌿, evergreen 🌲 (e.g. 'growth', 'stage', 'status')."
+        },
+        "obsidian-notes.digitalGarden.enableDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable editor diagnostics/squiggles for broken wikilinks and public-to-private privacy leaks."
+        },
+        "obsidian-notes.digitalGarden.showStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show interactive Growth Stage and Publish Status indicators in the VS Code status bar."
+        },
+        "obsidian-notes.callouts.enableDecorations": {
+          "type": "boolean",
+          "default": true,
+          "description": "Highlight Obsidian Callouts / Admonitions (> [!note]) in the editor with custom tint and borders."
         }
       }
     }
   }
 }
+

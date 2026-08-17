@@ -104,6 +104,30 @@ Supercharge frontmatter authoring with full Obsidian-like context-aware editing,
   - `Obsidian Notes: Convert Inline Tags to Frontmatter`: Extracts inline `#tags` and moves/merges them into frontmatter `tags:`.
   - `Obsidian Notes: Sync Note Title with Filename`: Synchronizes `title:` property with filename or H1 header.
 
+### 🌱 Digital Garden Suite & Growth Stages
+Transform your vault into a well-tended digital garden with full Quartz & Obsidian Publish compatibility:
+* **Dedicated Digital Garden Sidebar View**:
+  - **Garden Health & Overview**: Real-time health score, total note count, and publication ratio (`% public`).
+  - **Growth Stages Explorer**: Organize notes into 🌱 **Seedlings** (raw sparks/drafts), 🌿 **Budding** (developing structures), and 🌲 **Evergreen** (mature, high-value assets) with expandable trees.
+  - **Publication Status Explorer**: Group notes into 📢 **Published** vs 🔒 **Private**.
+  - **Garden Doctor**: Automated audits surfacing ⚠️ **Broken Wikilinks**, 🛡️ **Privacy Leaks** (public notes linking to private/unreleased notes), 🏝️ **Orphan Notes**, and 🚪 **Dead Ends**.
+* **Interactive Status Bar Controls**:
+  - Clickable status bar pills for instantaneous Growth Stage cycling (`🌱 Seedling` / `🌿 Budding` / `🌲 Evergreen`) and Publish Status toggling (`📢 Published` / `🔒 Private`).
+* **Live In-Editor Diagnostics**:
+  - Non-blocking editor squiggles and warnings on broken links and privacy leaks in publishable notes.
+* **Commands**:
+  - `Obsidian Notes: Toggle Publish Status` (`Ctrl+Alt+P` / `Cmd+Alt+P`)
+  - `Obsidian Notes: Set Growth Stage`
+  - `Obsidian Notes: Run Digital Garden Audit`
+  - `Obsidian Notes: Refresh Digital Garden`
+
+### 💡 Obsidian Callouts & Admonitions (`> [!note]`)
+Author expressive, beautiful callout blocks with standard Obsidian syntax:
+* **Supported Callout Types**: `note`, `abstract`, `summary`, `tldr`, `info`, `todo`, `tip`, `hint`, `important`, `success`, `check`, `done`, `question`, `help`, `faq`, `warning`, `caution`, `attention`, `failure`, `fail`, `missing`, `danger`, `error`, `bug`, `example`, `quote`, `cite`.
+* **Quick Inserter Command**: `Obsidian Notes: Insert Obsidian Callout / Admonition` (`Ctrl+Alt+C` / `Cmd+Alt+C`). Interactive QuickPick to choose callout category, custom title, and foldability (`+` expanded, `-` collapsed, or normal).
+* **Editor Styling & Decorations**: Subtle tinted background and accent borders in the markdown editor.
+* **Markdown Preview Rendering**: Full markdown-it integration converting callouts into theme-styled HTML blocks and interactive collapsible `<details><summary>` elements.
+
 ---
 
 ## Supported Template Variables
@@ -136,6 +160,8 @@ Placeholders are resolved at the moment of file creation or insertion relative t
 | `Ctrl+Alt+G` / `Cmd+Alt+G` | Open Graph View | Global |
 | `Alt+Enter` | Follow Wikilink Under Cursor | Active Markdown Document |
 | `Ctrl+Alt+E` / `Cmd+Alt+E` | Extract Selection to Note (Zettelkasten) | Active Selection in Markdown |
+| `Ctrl+Alt+C` / `Cmd+Alt+C` | Insert Obsidian Callout / Admonition | Active Editor in Markdown |
+| `Ctrl+Alt+P` / `Cmd+Alt+P` | Toggle Note Publish Status | Active Editor in Markdown |
 | `Ctrl+Alt+D` / `Cmd+Alt+D` | Create / Open Today's Daily Note | Global |
 | `Ctrl+Alt+T` / `Cmd+Alt+T` | Insert Markdown Template | Active Editor |
 
@@ -147,7 +173,12 @@ Customize settings inside your `settings.json` (Workspace or User) under the `ob
 
 | Setting | Type | Default | Description |
 |---|---|---|---|
-| `obsidian-notes.frontmatter.enableCompletions` | `boolean` | `true` | Enable context-aware IntelliSense completions in YAML frontmatter for properties, tags, categories, wikilinks, and values. |
+| `obsidian-notes.digitalGarden.publishProperty` | `string` | `"publish_external"` | Frontmatter property key used to determine publish status. |
+| `obsidian-notes.digitalGarden.growthProperty` | `string` | `"growth"` | Frontmatter property key used for note growth stages (`seedling` 🌱, `budding` 🌿, `evergreen` 🌲). |
+| `obsidian-notes.digitalGarden.enableDiagnostics` | `boolean` | `true` | Enable editor squiggles and warnings for broken wikilinks and privacy leaks. |
+| `obsidian-notes.digitalGarden.showStatusBar` | `boolean` | `true` | Show interactive Growth Stage and Publish Status indicators in the status bar. |
+| `obsidian-notes.callouts.enableDecorations` | `boolean` | `true` | Highlight Obsidian Callouts in the editor with custom background tint and border accents. |
+| `obsidian-notes.frontmatter.enableCompletions` | `boolean` | `true` | Enable context-aware IntelliSense completions in YAML frontmatter. |
 | `obsidian-notes.frontmatter.autoUpdateModifiedDate` | `boolean` | `true` | Automatically update last modified timestamp in YAML frontmatter on saving markdown notes. |
 | `obsidian-notes.frontmatter.modifiedDateKey` | `string` | `"updated"` | Frontmatter property key used for auto-updating modified timestamps. |
 | `obsidian-notes.frontmatter.dateFormat` | `string` | `"YYYY-MM-DD HH:mm:ss"` | Date/time format string used when writing timestamps in frontmatter. |
