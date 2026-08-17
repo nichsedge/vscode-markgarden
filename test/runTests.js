@@ -11,7 +11,16 @@ Module.prototype.require = function(path) {
         fire() {}
         dispose() {}
       },
+      Position: class { constructor(line, character) { this.line = line; this.character = character; } },
       Range: class { constructor(start, end) { this.start = start; this.end = end; } },
+      CompletionItem: class { constructor(label, kind) { this.label = label; this.kind = kind; this.insertText = label; } },
+      CompletionItemKind: { Property: 9, Keyword: 13, Folder: 18, Reference: 17, Value: 11, EnumMember: 19 },
+      SnippetString: class { constructor(val) { this.value = val; } },
+      TextEdit: { replace: (range, text) => ({ range, text }) },
+      WorkspaceEdit: class {
+        constructor() { this.edits = []; }
+        replace(uri, range, text) { this.edits.push({ uri, range, text }); }
+      },
       MarkdownString: class {
         constructor(val) { this.value = val || ''; this.isTrusted = false; this.supportHtml = false; }
         appendMarkdown(str) { this.value += str; }
@@ -70,6 +79,16 @@ const {
   renameCategoryInMarkdown
 } = require('../src/tagsCategories');
 const { processTemplate, formatDateTime } = require('../src/templates');
+const {
+  getFrontmatterInfo,
+  formatFrontmatterInMarkdown,
+  setPropertyInMarkdown,
+  removePropertyFromMarkdown,
+  renamePropertyInMarkdown,
+  convertInlineTagsToFrontmatterInMarkdown,
+  updateModifiedDateInMarkdown,
+  FrontmatterCompletionProvider
+} = require('../src/frontmatter');
 
 let testsPassed = 0;
 let testsFailed = 0;
@@ -515,6 +534,246 @@ test('registerMarkdownItWikilinks transforms [[wikilinks]] and ![[embeds]] into 
   assert.strictEqual(tokens[5].type, 'image');
   assert.strictEqual(tokens[5].attrs[0][1], 'photo.jpg');
   assert.strictEqual(tokens[6].content, ' here.');
+});
+
+console.log('\nFrontmatter Editing & IntelliSense Suite:');
+
+test('parseFrontmatter parses custom properties, scalar values, and list syntax', () => {
+  const content = `---
+title: "My Sample Note"
+status: in-progress
+rating: 5
+tags:
+  - obsidian
+  - productivity
+categories: [Tech, Software]
+authors:
+  - Alice
+  - Bob
+up: "[[Index Note]]"
+---
+# Content here`;
+
+  const parsed = parseFrontmatter(content);
+  assert.strictEqual(parsed.hasFrontmatter, true);
+  assert.strictEqual(parsed.title, 'My Sample Note');
+  assert.strictEqual(parsed.tags.has('obsidian'), true);
+  assert.strictEqual(parsed.tags.has('productivity'), true);
+  assert.strictEqual(parsed.categories.has('Tech'), true);
+  assert.strictEqual(parsed.categories.has('Software'), true);
+  assert.strictEqual(parsed.properties.get('status'), 'in-progress');
+  assert.strictEqual(parsed.properties.get('rating'), '5');
+  assert.deepStrictEqual(parsed.properties.get('authors'), ['Alice', 'Bob']);
+  assert.strictEqual(parsed.properties.get('up'), '[[Index Note]]');
+  assert.strictEqual(parsed.propertyKeys.has('status'), true);
+  assert.strictEqual(parsed.propertyKeys.has('authors'), true);
+  assert.strictEqual(parsed.frontmatterRange.startLine, 0);
+  assert.strictEqual(parsed.frontmatterRange.endLine, 12);
+});
+
+test('WorkspaceNotesIndexer indexes property keys and values across workspace', () => {
+  const indexer = new WorkspaceNotesIndexer();
+  indexer.indexFileContent('/workspace/note1.md', '---\ntitle: Note 1\nstatus: draft\npriority: high\n---\n# Note 1');
+  indexer.indexFileContent('/workspace/note2.md', '---\ntitle: Note 2\nstatus: completed\npriority: high\n---\n# Note 2');
+
+  const keys = indexer.getAllPropertyKeys();
+  assert.strictEqual(keys.includes('status'), true);
+  assert.strictEqual(keys.includes('priority'), true);
+  assert.strictEqual(keys.includes('title'), true);
+
+  const statusValues = indexer.getPropertyValues('status');
+  assert.deepStrictEqual(statusValues, ['completed', 'draft']);
+
+  const priorityValues = indexer.getPropertyValues('priority');
+  assert.deepStrictEqual(priorityValues, ['high']);
+
+  const notesWithStatus = indexer.getNotesWithProperty('status');
+  assert.strictEqual(notesWithStatus.length, 2);
+
+  const notesDraft = indexer.getNotesWithProperty('status', 'draft');
+  assert.strictEqual(notesDraft.length, 1);
+  assert.strictEqual(notesDraft[0], '/workspace/note1.md');
+});
+
+test('getFrontmatterInfo detects bounds and lines accurately', () => {
+  const md = '---\ntitle: Test\nstatus: draft\n---\nBody text';
+  const info = getFrontmatterInfo(md);
+  assert.strictEqual(info.exists, true);
+  assert.strictEqual(info.startLine, 0);
+  assert.strictEqual(info.endLine, 3);
+  assert.strictEqual(info.yamlLines.length, 2);
+  assert.strictEqual(info.yamlLines[0], 'title: Test');
+  assert.strictEqual(info.yamlLines[1], 'status: draft');
+
+  const noFm = '# Just body';
+  const noInfo = getFrontmatterInfo(noFm);
+  assert.strictEqual(noInfo.exists, false);
+});
+
+test('formatFrontmatterInMarkdown normalizes YAML and preserves body', () => {
+  const raw = `---
+status: active
+title: "My Note"
+tags: [tag1, tag2]
+authors:
+  - Bob
+---
+# Main Content
+Some paragraphs.`;
+
+  const formatted = formatFrontmatterInMarkdown(raw);
+  assert.strictEqual(formatted.includes('title: My Note'), true);
+  assert.strictEqual(formatted.includes('tags:\n  - tag1\n  - tag2'), true);
+  assert.strictEqual(formatted.includes('status: active'), true);
+  assert.strictEqual(formatted.includes('# Main Content\nSome paragraphs.'), true);
+});
+
+test('setPropertyInMarkdown adds and updates properties cleanly', () => {
+  const raw = `---
+title: Original
+---
+Body`;
+
+  // Update existing
+  const updated = setPropertyInMarkdown(raw, 'title', 'New Title');
+  assert.strictEqual(updated.includes('title: New Title'), true);
+
+  // Add new property
+  const withStatus = setPropertyInMarkdown(updated, 'status', 'published');
+  assert.strictEqual(withStatus.includes('status: published'), true);
+  assert.strictEqual(withStatus.includes('title: New Title'), true);
+  assert.strictEqual(withStatus.includes('Body'), true);
+
+  // Add array property
+  const withList = setPropertyInMarkdown(withStatus, 'aliases', ['Alias1', 'Alias2']);
+  assert.strictEqual(withList.includes('aliases:\n  - Alias1\n  - Alias2'), true);
+
+  // Set property on note without frontmatter
+  const noFm = '# Plain Markdown Note';
+  const addedFm = setPropertyInMarkdown(noFm, 'title', 'Created Note');
+  assert.strictEqual(addedFm.startsWith('---\ntitle: Created Note\n---\n\n# Plain Markdown Note'), true);
+});
+
+test('removePropertyFromMarkdown removes property cleanly', () => {
+  const content = `---
+title: Note
+status: draft
+tags:
+  - a
+---
+Body text`;
+
+  const removed = removePropertyFromMarkdown(content, 'status');
+  assert.strictEqual(removed.includes('status:'), false);
+  assert.strictEqual(removed.includes('title: Note'), true);
+  assert.strictEqual(removed.includes('tags:'), true);
+  assert.strictEqual(removed.includes('Body text'), true);
+});
+
+test('renamePropertyInMarkdown renames property across frontmatter', () => {
+  const content = `---
+title: Note
+category: Personal
+---
+Body text`;
+
+  const renamed = renamePropertyInMarkdown(content, 'category', 'categories');
+  assert.strictEqual(renamed.includes('categories: Personal'), true);
+  assert.strictEqual(renamed.includes('category: Personal'), false);
+  assert.strictEqual(renamed.includes('title: Note'), true);
+});
+
+test('convertInlineTagsToFrontmatterInMarkdown merges inline tags and preserves body', () => {
+  const content = `---
+title: Tag Test
+tags:
+  - existing
+---
+This is a note with #productivity and #coding/javascript in text.`;
+
+  const result = convertInlineTagsToFrontmatterInMarkdown(content, false);
+  assert.strictEqual(result.count, 2);
+  assert.strictEqual(result.content.includes('- existing'), true);
+  assert.strictEqual(result.content.includes('- productivity'), true);
+  assert.strictEqual(result.content.includes('- coding/javascript'), true);
+  assert.strictEqual(result.content.includes('#productivity'), true);
+
+  const movedResult = convertInlineTagsToFrontmatterInMarkdown(content, true);
+  assert.strictEqual(movedResult.content.includes('This is a note with productivity and coding/javascript in text.'), true);
+});
+
+test('updateModifiedDateInMarkdown updates updated timestamp', () => {
+  const content = `---
+title: Note
+updated: 2020-01-01 00:00:00
+---
+Body`;
+
+  const updated = updateModifiedDateInMarkdown(content, 'updated', 'YYYY-MM-DD');
+  assert.strictEqual(updated.includes('2020-01-01'), false);
+  assert.strictEqual(updated.includes('updated:'), true);
+  assert.strictEqual(updated.includes('Body'), true);
+});
+
+test('FrontmatterCompletionProvider provides keys, tags, wikilinks, dates, and values', () => {
+  const indexer = new WorkspaceNotesIndexer();
+  indexer.indexFileContent('/workspace/note1.md', '---\ntitle: First\nstatus: in-review\ntags: [review, book]\n---\n# Note');
+  indexer.indexFileContent('/workspace/note2.md', '---\ntitle: Second\nstatus: completed\ntags: [review]\n---\n# Note 2');
+
+  const provider = new FrontmatterCompletionProvider(indexer);
+
+  // 1. Key completions at line start
+  const mockDocKeys = {
+    getText: () => '---\n\n---\nBody',
+    lineAt: () => ({ text: '' })
+  };
+  const keyCompletions = provider.provideCompletionItems(mockDocKeys, { line: 1, character: 0 });
+  assert.strictEqual(keyCompletions.length > 0, true);
+  const labels = keyCompletions.map(c => c.label);
+  assert.strictEqual(labels.includes('title'), true);
+  assert.strictEqual(labels.includes('tags'), true);
+  assert.strictEqual(labels.includes('status'), true);
+
+  // 2. Tag completions inside tags:
+  const mockDocTags = {
+    getText: () => '---\ntags: \n---\nBody',
+    lineAt: (l) => ({ text: l === 1 ? 'tags: ' : '---\n' })
+  };
+  const tagCompletions = provider.provideCompletionItems(mockDocTags, { line: 1, character: 6 });
+  assert.strictEqual(tagCompletions.length >= 2, true);
+  const tagLabels = tagCompletions.map(c => c.label);
+  assert.strictEqual(tagLabels.includes('review'), true);
+  assert.strictEqual(tagLabels.includes('book'), true);
+
+  // 3. Dynamic value completions for status:
+  const mockDocStatus = {
+    getText: () => '---\nstatus: \n---\nBody',
+    lineAt: (l) => ({ text: l === 1 ? 'status: ' : '---\n' })
+  };
+  const statusCompletions = provider.provideCompletionItems(mockDocStatus, { line: 1, character: 8 });
+  assert.strictEqual(statusCompletions.length >= 2, true);
+  const statusLabels = statusCompletions.map(c => c.label);
+  assert.strictEqual(statusLabels.includes('in-review'), true);
+  assert.strictEqual(statusLabels.includes('completed'), true);
+
+  // 4. Wikilink completions when typing [[
+  const mockDocWikilink = {
+    getText: () => '---\nup: "[[\n---\nBody',
+    lineAt: (l) => ({ text: l === 1 ? 'up: "[[' : '---\n' })
+  };
+  const linkCompletions = provider.provideCompletionItems(mockDocWikilink, { line: 1, character: 7 });
+  assert.strictEqual(linkCompletions.length >= 2, true);
+  const noteNames = linkCompletions.map(c => c.label);
+  assert.strictEqual(noteNames.includes('note1'), true);
+  assert.strictEqual(noteNames.includes('note2'), true);
+
+  // 5. Date completions under date:
+  const mockDocDate = {
+    getText: () => '---\ndate: \n---\nBody',
+    lineAt: (l) => ({ text: l === 1 ? 'date: ' : '---\n' })
+  };
+  const dateCompletions = provider.provideCompletionItems(mockDocDate, { line: 1, character: 6 });
+  assert.strictEqual(dateCompletions.length >= 3, true);
 });
 
 console.log(`\nResults: ${testsPassed} passed, ${testsFailed} failed.`);

@@ -27,6 +27,16 @@ const { BacklinksTreeDataProvider, convertUnlinkedMentionToWikilinkCommand } = r
 const { ObsidianHoverProvider } = require('./src/hoverProvider');
 const { extractSelectionToNote } = require('./src/noteRefactor');
 
+const {
+  FrontmatterCompletionProvider,
+  registerFrontmatterSaveHandler,
+  addPropertyCommand,
+  formatFrontmatterCommand,
+  renamePropertyWorkspaceCommand,
+  convertInlineTagsToFrontmatterCommand,
+  syncTitleWithFilenameCommand
+} = require('./src/frontmatter');
+
 const { registerMarkdownItWikilinks } = require('./src/markdownItPlugin');
 
 let indexer = null;
@@ -53,6 +63,7 @@ async function activate(context) {
   const defProvider = new ObsidianDefinitionProvider(indexer);
   const wikilinkCompletionProvider = new ObsidianCompletionItemProvider(indexer);
   const hashtagCompletionProvider = new ObsidianHashtagCompletionItemProvider(indexer);
+  const frontmatterCompletionProvider = new FrontmatterCompletionProvider(indexer);
   const hoverProvider = new ObsidianHoverProvider(indexer);
 
   context.subscriptions.push(
@@ -60,8 +71,12 @@ async function activate(context) {
     vscode.languages.registerDefinitionProvider(markdownSelector, defProvider),
     vscode.languages.registerCompletionItemProvider(markdownSelector, wikilinkCompletionProvider, '['),
     vscode.languages.registerCompletionItemProvider(markdownSelector, hashtagCompletionProvider, '#'),
+    vscode.languages.registerCompletionItemProvider(markdownSelector, frontmatterCompletionProvider, ':', ' ', '[', '-', '\n', '#'),
     vscode.languages.registerHoverProvider(markdownSelector, hoverProvider)
   );
+
+  // Register Auto-update Modified Date on Save Handler
+  registerFrontmatterSaveHandler(context, indexer);
 
   // Register Sidebar Tree Views (with proper disposal)
   const backlinksTreeDataProvider = new BacklinksTreeDataProvider(indexer);
@@ -82,6 +97,13 @@ async function activate(context) {
     // Daily Notes & Templates
     vscode.commands.registerCommand('obsidian-notes.createDailyNote', createDailyNote),
     vscode.commands.registerCommand('obsidian-notes.insertTemplate', insertTemplate),
+
+    // Frontmatter Management
+    vscode.commands.registerCommand('obsidian-notes.addProperty', () => addPropertyCommand(indexer)),
+    vscode.commands.registerCommand('obsidian-notes.formatFrontmatter', () => formatFrontmatterCommand()),
+    vscode.commands.registerCommand('obsidian-notes.renameProperty', () => renamePropertyWorkspaceCommand(indexer)),
+    vscode.commands.registerCommand('obsidian-notes.convertInlineTagsToFrontmatter', () => convertInlineTagsToFrontmatterCommand(indexer)),
+    vscode.commands.registerCommand('obsidian-notes.syncTitleWithFilename', () => syncTitleWithFilenameCommand()),
 
     // Graph View
     vscode.commands.registerCommand('obsidian-notes.openGraphView', () => graphViewManager.openGraphView(false)),

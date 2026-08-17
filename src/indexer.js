@@ -12,6 +12,8 @@ function parseFrontmatter(content) {
     tags: new Set(),
     categories: new Set(),
     aliases: new Set(),
+    properties: new Map(),
+    propertyKeys: new Set(),
     hasFrontmatter: false,
     frontmatterRange: null
   };
@@ -23,7 +25,12 @@ function parseFrontmatter(content) {
 
   result.hasFrontmatter = true;
   const rawYaml = match[1];
-  const lines = rawYaml.split('\n');
+  const lines = rawYaml.split(/\r?\n/);
+  result.frontmatterRange = {
+    startLine: 0,
+    endLine: lines.length + 1
+  };
+
   let currentKey = null;
 
   for (let i = 0; i < lines.length; i++) {
@@ -44,6 +51,15 @@ function parseFrontmatter(content) {
         } else if (currentKey === 'aliases' || currentKey === 'alias') {
           result.aliases.add(itemVal);
         }
+
+        const existing = result.properties.get(currentKey);
+        if (Array.isArray(existing)) {
+          existing.push(itemVal);
+        } else if (typeof existing === 'string' && existing.length > 0) {
+          result.properties.set(currentKey, [existing, itemVal]);
+        } else {
+          result.properties.set(currentKey, [itemVal]);
+        }
       }
       continue;
     }
@@ -53,33 +69,57 @@ function parseFrontmatter(content) {
       continue;
     }
 
-    const key = rawLine.slice(0, colonIdx).trim().toLowerCase();
+    const rawKey = rawLine.slice(0, colonIdx).trim();
+    const key = rawKey.toLowerCase();
     const val = rawLine.slice(colonIdx + 1).trim();
 
+    if (!key) continue;
+
+    currentKey = key;
+    result.propertyKeys.add(rawKey);
+
     if (key === 'title') {
-      currentKey = 'title';
-      result.title = val.replace(/^['"]|['"]$/g, '');
+      const cleanVal = val.replace(/^['"]|['"]$/g, '');
+      result.title = cleanVal;
+      result.properties.set(key, cleanVal);
     } else if (key === 'tags' || key === 'tag') {
-      currentKey = 'tags';
       if (val) {
-        // May be bracketed "[tag1, tag2]" or comma-separated "tag1, tag2"
         const cleaned = val.replace(/[[\]]/g, '');
-        cleaned.split(',').map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean).forEach(t => result.tags.add(t));
+        const tagList = cleaned.split(',').map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+        tagList.forEach(t => result.tags.add(t));
+        result.properties.set(key, tagList);
+      } else {
+        result.properties.set(key, []);
       }
     } else if (key === 'categories' || key === 'category') {
-      currentKey = 'categories';
       if (val) {
         const cleaned = val.replace(/[[\]]/g, '');
-        cleaned.split(',').map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean).forEach(c => result.categories.add(c));
+        const catList = cleaned.split(',').map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+        catList.forEach(c => result.categories.add(c));
+        result.properties.set(key, catList);
+      } else {
+        result.properties.set(key, []);
       }
     } else if (key === 'aliases' || key === 'alias') {
-      currentKey = 'aliases';
       if (val) {
         const cleaned = val.replace(/[[\]]/g, '');
-        cleaned.split(',').map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean).forEach(a => result.aliases.add(a));
+        const aliasList = cleaned.split(',').map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+        aliasList.forEach(a => result.aliases.add(a));
+        result.properties.set(key, aliasList);
+      } else {
+        result.properties.set(key, []);
       }
     } else {
-      currentKey = key;
+      if (val) {
+        if (val.startsWith('[') && val.endsWith(']')) {
+          const listVals = val.slice(1, -1).split(',').map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+          result.properties.set(key, listVals);
+        } else {
+          result.properties.set(key, val.replace(/^['"]|['"]$/g, ''));
+        }
+      } else {
+        result.properties.set(key, []);
+      }
     }
   }
 
@@ -337,6 +377,8 @@ class WorkspaceNotesIndexer {
     this.categoryIndex = new Map(); // category -> Set<filePath>
     this.titleToPathIndex = new Map(); // lowercase note name (without .md) -> Set<filePath>
     this.mediaToPathIndex = new Map(); // lowercase media basename -> Set<filePath>
+    this.propertyKeyIndex = new Map(); // lowercase property key -> Set<filePath>
+    this.propertyValueIndex = new Map(); // lowercase property key -> Set<string value>
     
     this._onDidChangeIndex = new vscode.EventEmitter();
     this.onDidChangeIndex = this._onDidChangeIndex.event;
@@ -355,7 +397,7 @@ class WorkspaceNotesIndexer {
   /**
    * Initializes indexer, builds initial index, and sets up file system watchers.
    */
-  async initialize(context) {
+  async initialize(_context) {
     await this.rebuildIndex();
 
     // Create file system watcher for markdown and media files
@@ -387,17 +429,28 @@ class WorkspaceNotesIndexer {
     this.categoryIndex.clear();
     this.titleToPathIndex.clear();
     this.mediaToPathIndex.clear();
+    this.propertyKeyIndex.clear();
+    this.propertyValueIndex.clear();
     this._invalidateCache();
 
     const config = vscode.workspace.getConfiguration('obsidian-notes');
-    const excluded = config.get('excludedFolders', [
+    const excluded = [...config.get('excludedFolders', [
       '**/node_modules/**',
       '**/.git/**',
       '**/.vscode/**',
       '**/dist/**',
       '**/out/**',
       '**/vendor/**'
-    ]);
+    ])];
+
+    const templatesFolder = config.get('templatesFolder', 'templates');
+    const excludeTemplates = config.get('excludeTemplatesFromIndex', true);
+    if (excludeTemplates && templatesFolder) {
+      const cleanFolder = templatesFolder.replace(/^\/+|\/+$/g, '');
+      if (cleanFolder) {
+        excluded.push(`**/${cleanFolder}/**`);
+      }
+    }
 
     const excludePattern = excluded.length > 0 ? `{${excluded.join(',')}}` : undefined;
 
@@ -547,6 +600,16 @@ class WorkspaceNotesIndexer {
    */
   _shouldIgnore(filePath) {
     const normalized = filePath.replace(/\\/g, '/');
+    const config = vscode.workspace.getConfiguration('obsidian-notes');
+    const templatesFolder = config.get('templatesFolder', 'templates');
+    const excludeTemplates = config.get('excludeTemplatesFromIndex', true);
+    if (excludeTemplates && templatesFolder) {
+      const cleanFolder = templatesFolder.replace(/^\/+|\/+$/g, '');
+      if (cleanFolder && (normalized.includes(`/${cleanFolder}/`) || normalized.startsWith(`${cleanFolder}/`))) {
+        return true;
+      }
+    }
+
     return normalized.includes('/node_modules/') ||
            normalized.includes('/.git/') ||
            normalized.includes('/.vscode/') ||
@@ -590,6 +653,7 @@ class WorkspaceNotesIndexer {
       headings,
       tags: allTags,
       categories: frontmatter.categories,
+      properties: frontmatter.properties,
       links: wikilinks,
       blocks,
       blockMap,
@@ -597,6 +661,28 @@ class WorkspaceNotesIndexer {
       _content: content
     };
     this.fileIndex.set(filePath, meta);
+
+    // Inverted index for frontmatter properties & values
+    if (frontmatter.properties) {
+      for (const [key, val] of frontmatter.properties.entries()) {
+        if (!this.propertyKeyIndex.has(key)) {
+          this.propertyKeyIndex.set(key, new Set());
+        }
+        this.propertyKeyIndex.get(key).add(filePath);
+
+        if (!this.propertyValueIndex.has(key)) {
+          this.propertyValueIndex.set(key, new Set());
+        }
+        const valSet = this.propertyValueIndex.get(key);
+        if (Array.isArray(val)) {
+          for (const item of val) {
+            if (item && typeof item === 'string') valSet.add(item);
+          }
+        } else if (typeof val === 'string' && val.trim()) {
+          valSet.add(val.trim());
+        }
+      }
+    }
 
     // Inverted index for tags
     for (const tag of allTags) {
@@ -688,6 +774,19 @@ class WorkspaceNotesIndexer {
       if (set) {
         set.delete(filePath);
         if (set.size === 0) this.categoryIndex.delete(cat);
+      }
+    }
+
+    if (existing.properties) {
+      for (const key of existing.properties.keys()) {
+        const set = this.propertyKeyIndex.get(key);
+        if (set) {
+          set.delete(filePath);
+          if (set.size === 0) {
+            this.propertyKeyIndex.delete(key);
+            this.propertyValueIndex.delete(key);
+          }
+        }
       }
     }
 
@@ -802,6 +901,57 @@ class WorkspaceNotesIndexer {
     })).sort((a, b) => a.category.localeCompare(b.category));
 
     return this._cachedCategories;
+  }
+
+  /**
+   * Get all indexed frontmatter property keys across workspace notes,
+   * merged with standard Obsidian keys.
+   */
+  getAllPropertyKeys() {
+    const defaultKeys = [
+      'title', 'date', 'updated', 'modified', 'tags', 'categories',
+      'aliases', 'author', 'status', 'summary', 'draft', 'publish',
+      'banner', 'created', 'source', 'up', 'related', 'parent', 'type'
+    ];
+    const keySet = new Set(defaultKeys);
+    for (const key of this.propertyKeyIndex.keys()) {
+      keySet.add(key);
+    }
+    return Array.from(keySet).sort((a, b) => a.localeCompare(b));
+  }
+
+  /**
+   * Get all distinct values indexed for a specific property key.
+   */
+  getPropertyValues(key) {
+    if (!key) return [];
+    const lower = key.toLowerCase();
+    const valSet = this.propertyValueIndex.get(lower);
+    if (!valSet) return [];
+    return Array.from(valSet).sort((a, b) => a.localeCompare(b));
+  }
+
+  /**
+   * Get all files that have a specific frontmatter property key (and optional value).
+   */
+  getNotesWithProperty(key, value = null) {
+    if (!key) return [];
+    const lower = key.toLowerCase();
+    const files = this.propertyKeyIndex.get(lower);
+    if (!files) return [];
+    const fileList = Array.from(files);
+    if (value === null || value === undefined) {
+      return fileList;
+    }
+    return fileList.filter(filePath => {
+      const meta = this.fileIndex.get(filePath);
+      if (!meta || !meta.properties) return false;
+      const propVal = meta.properties.get(lower);
+      if (Array.isArray(propVal)) {
+        return propVal.some(v => String(v).toLowerCase() === String(value).toLowerCase());
+      }
+      return String(propVal).toLowerCase() === String(value).toLowerCase();
+    });
   }
 
   /**
@@ -1083,6 +1233,8 @@ class WorkspaceNotesIndexer {
     this.tagIndex.clear();
     this.categoryIndex.clear();
     this.titleToPathIndex.clear();
+    this.propertyKeyIndex.clear();
+    this.propertyValueIndex.clear();
     this._cachedTags = null;
     this._cachedCategories = null;
   }

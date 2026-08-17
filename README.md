@@ -81,11 +81,28 @@ Create or open today's daily log file instantly.
 * **Smart Templating**: If today's daily note doesn't exist, it's automatically created. If a template is configured (e.g. `templates/daily.md`), it is read, parsed, and populated with resolved timestamps and filename values.
 * **Auto-Open**: Optionally open or create your daily note automatically on editor startup.
 
-### 📝 Insert Template
+### 📋 Insert Template
 Quickly insert processed markdown templates into your active markdown file at the cursor position.
 * **Command**: `Obsidian Notes: Insert Template`
 * **Keyboard Shortcut**: `Ctrl+Alt+T` (Windows/Linux) or `Cmd+Alt+T` (macOS)
 * **Metadata-Rich Dropdown**: Scans your templates folder and reads the YAML frontmatter of each template to display Title, Filepath, Description, and Tags in an elegant, search-filterable VS Code QuickPick selector.
+
+### 📝 Obsidian Properties & Frontmatter Suite
+Supercharge frontmatter authoring with full Obsidian-like context-aware editing, auto-maintenance, and refactoring:
+* **Context-Aware YAML IntelliSense**:
+  - **Property Key Completion**: Suggests built-in Obsidian keys (`title`, `date`, `updated`, `modified`, `tags`, `categories`, `aliases`, `author`, `status`, `summary`, `draft`, `publish`, `banner`, `up`, `related`, `type`, etc.) and all custom property keys across your workspace.
+  - **Tag & Category Suggestions**: Typing under `tags:` or `categories:` (inline or list `- item`) suggests workspace-indexed tags and categories.
+  - **Wikilink Completion**: Typing `[[` inside frontmatter fields (e.g. `up:`, `related:`, `source:`) completes note names.
+  - **Date & Timestamp Snippets**: Autocompletes `today`, `now`, `YYYY-MM-DD`, and full timestamps under date properties.
+  - **Workspace Enum Value Suggestions**: Suggests distinct previously used values for custom properties (e.g. `status:` suggests `draft`, `in-progress`, `completed`).
+* **Auto-Update Modified Date on Save**:
+  - Automatically updates the `updated:` or `modified:` timestamp in frontmatter on save without breaking formatting.
+* **Frontmatter Management Commands**:
+  - `Obsidian Notes: Add / Set Frontmatter Property`: QuickPick to select or create a property key and set its value.
+  - `Obsidian Notes: Format Frontmatter`: Normalizes YAML indentation, key order, and list syntax.
+  - `Obsidian Notes: Rename Property Across Workspace`: Batch-renames a frontmatter property key across all notes in the vault.
+  - `Obsidian Notes: Convert Inline Tags to Frontmatter`: Extracts inline `#tags` and moves/merges them into frontmatter `tags:`.
+  - `Obsidian Notes: Sync Note Title with Filename`: Synchronizes `title:` property with filename or H1 header.
 
 ---
 
@@ -130,6 +147,11 @@ Customize settings inside your `settings.json` (Workspace or User) under the `ob
 
 | Setting | Type | Default | Description |
 |---|---|---|---|
+| `obsidian-notes.frontmatter.enableCompletions` | `boolean` | `true` | Enable context-aware IntelliSense completions in YAML frontmatter for properties, tags, categories, wikilinks, and values. |
+| `obsidian-notes.frontmatter.autoUpdateModifiedDate` | `boolean` | `true` | Automatically update last modified timestamp in YAML frontmatter on saving markdown notes. |
+| `obsidian-notes.frontmatter.modifiedDateKey` | `string` | `"updated"` | Frontmatter property key used for auto-updating modified timestamps. |
+| `obsidian-notes.frontmatter.dateFormat` | `string` | `"YYYY-MM-DD HH:mm:ss"` | Date/time format string used when writing timestamps in frontmatter. |
+| `obsidian-notes.frontmatter.defaultProperties` | `array` | `["title", "date", ...]` | Default property keys suggested in frontmatter completion. |
 | `obsidian-notes.hoverPreviewEnabled` | `boolean` | `true` | Show rich markdown preview tooltip when hovering over `[[links]]`, `![[embeds]]`, headings, and blocks. |
 | `obsidian-notes.hoverPreviewMaxLength` | `number` | `1200` | Maximum character length for hover preview body before truncation. |
 | `obsidian-notes.newNoteFolderStrategy` | `string` | `"root"` | Where to create new notes when following a non-existent `[[link]]`: `"root"`, `"sameAsCurrent"`, or `"custom"`. |

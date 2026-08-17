@@ -164,6 +164,32 @@
         "title": "Extract Selection to Note (Zettelkasten Refactor)",
         "category": "Obsidian Notes",
         "icon": "$(symbol-file)"
+      },
+      {
+        "command": "obsidian-notes.addProperty",
+        "title": "Add / Set Frontmatter Property",
+        "category": "Obsidian Notes",
+        "icon": "$(list-selection)"
+      },
+      {
+        "command": "obsidian-notes.formatFrontmatter",
+        "title": "Format Frontmatter",
+        "category": "Obsidian Notes"
+      },
+      {
+        "command": "obsidian-notes.renameProperty",
+        "title": "Rename Property Across Workspace",
+        "category": "Obsidian Notes"
+      },
+      {
+        "command": "obsidian-notes.convertInlineTagsToFrontmatter",
+        "title": "Convert Inline Tags to Frontmatter",
+        "category": "Obsidian Notes"
+      },
+      {
+        "command": "obsidian-notes.syncTitleWithFilename",
+        "title": "Sync Note Title with Filename",
+        "category": "Obsidian Notes"
       }
     ],
     "menus": {
@@ -282,6 +308,11 @@
           "default": "templates",
           "description": "Path to the templates folder relative to the workspace root."
         },
+        "obsidian-notes.excludeTemplatesFromIndex": {
+          "type": "boolean",
+          "default": true,
+          "description": "Exclude templates folder from note graph, backlinks, and wikilink autocompletion so template drafts do not pollute the workspace index."
+        },
         "obsidian-notes.dailyNotesFolder": {
           "type": "string",
           "default": "",
@@ -339,6 +370,43 @@
             "**/out/**"
           ],
           "description": "Glob patterns of directories to exclude from workspace notes and tag indexing."
+        },
+        "obsidian-notes.frontmatter.enableCompletions": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable context-aware IntelliSense completions in YAML frontmatter for properties, tags, categories, wikilinks, and values."
+        },
+        "obsidian-notes.frontmatter.autoUpdateModifiedDate": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically update last modified timestamp in YAML frontmatter on saving markdown notes."
+        },
+        "obsidian-notes.frontmatter.modifiedDateKey": {
+          "type": "string",
+          "default": "updated",
+          "description": "Frontmatter property key name used for auto-updating modified timestamps (e.g. 'updated', 'modified', 'lastmod')."
+        },
+        "obsidian-notes.frontmatter.dateFormat": {
+          "type": "string",
+          "default": "YYYY-MM-DD HH:mm:ss",
+          "description": "Date/time format string used when writing timestamps in frontmatter."
+        },
+        "obsidian-notes.frontmatter.defaultProperties": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "title",
+            "date",
+            "updated",
+            "tags",
+            "categories",
+            "aliases",
+            "status",
+            "summary"
+          ],
+          "description": "List of default property keys suggested in frontmatter completion."
         }
       }
     }
