@@ -104,7 +104,55 @@ function resolveNewNoteFolder(sourceFilePath) {
 }
 
 /**
- * DocumentLinkProvider to make [[wikilinks]] clickable in markdown files.
+ * Resolves media file path (images, audio, video, PDF) in workspace.
+ */
+function resolveMediaFilePath(mediaTarget, sourceFilePath) {
+  if (!mediaTarget) return null;
+  const cleanTarget = mediaTarget.trim();
+
+  // 1. Direct check relative to source file directory
+  if (sourceFilePath) {
+    const sourceDir = path.dirname(sourceFilePath);
+    const relativeCandidate = path.resolve(sourceDir, cleanTarget);
+    try {
+      if (fs.existsSync(relativeCandidate) && fs.statSync(relativeCandidate).isFile()) {
+        return relativeCandidate;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // 2. Check in workspace root and common attachment subdirectories
+  const workspaceFolder = (sourceFilePath && vscode.workspace.getWorkspaceFolder(vscode.Uri.file(sourceFilePath))) ||
+                          (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0]);
+  if (workspaceFolder) {
+    const rootPath = workspaceFolder.uri.fsPath;
+    const candidates = [
+      path.resolve(rootPath, cleanTarget),
+      path.resolve(rootPath, 'attachments', cleanTarget),
+      path.resolve(rootPath, 'assets', cleanTarget),
+      path.resolve(rootPath, 'images', cleanTarget),
+      path.resolve(rootPath, 'media', cleanTarget),
+      path.resolve(rootPath, 'static', cleanTarget)
+    ];
+
+    for (const cand of candidates) {
+      try {
+        if (fs.existsSync(cand) && fs.statSync(cand).isFile()) {
+          return cand;
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * DocumentLinkProvider to make [[wikilinks]] and ![[embeds]] clickable in markdown files.
  * Uses cached parsed wikilinks and pre-resolved link targets from the indexer.
  */
 class ObsidianDocumentLinkProvider {
@@ -125,9 +173,6 @@ class ObsidianDocumentLinkProvider {
 
     return links.map(item => {
       const parsed = parseWikilinkTarget(item.target);
-      const targetPath = parsed.targetNote
-        ? (resolvedMap.get(parsed.targetNote) || this.indexer.resolveNotePath(parsed.targetNote, document.fileName))
-        : document.fileName;
 
       // Encode arguments for command URI
       const commandArgs = encodeURIComponent(JSON.stringify({
@@ -137,6 +182,19 @@ class ObsidianDocumentLinkProvider {
 
       const linkUri = vscode.Uri.parse(`command:obsidian-notes.openWikilink?${commandArgs}`);
       const docLink = new vscode.DocumentLink(item.range, linkUri);
+
+      if (parsed.isMedia) {
+        const mediaPath = resolveMediaFilePath(parsed.targetNote, document.fileName);
+        docLink.tooltip = mediaPath
+          ? `Open media file "${parsed.targetNote}" (Ctrl/Cmd+Click)`
+          : `Media file "${parsed.targetNote}" (not found)`;
+        return docLink;
+      }
+
+      const targetPath = parsed.targetNote
+        ? (resolvedMap.get(parsed.targetNote) || this.indexer.resolveNotePath(parsed.targetNote, document.fileName))
+        : document.fileName;
+
       let anchorText = '';
       if (parsed.blockId) anchorText = ` #^${parsed.blockId}`;
       else if (parsed.heading) anchorText = ` #${parsed.heading}`;
@@ -348,6 +406,18 @@ async function navigateWikilink(targetStr, sourceFilePath, indexer) {
   if (!targetStr) return;
 
   const parsed = parseWikilinkTarget(targetStr);
+
+  // If target is a media attachment (e.g. image, video, pdf), open media file directly
+  if (parsed.isMedia) {
+    const mediaPath = resolveMediaFilePath(parsed.targetNote, sourceFilePath);
+    if (mediaPath) {
+      vscode.commands.executeCommand('vscode.open', vscode.Uri.file(mediaPath));
+    } else {
+      vscode.window.showWarningMessage(`Obsidian Notes: Media file "${parsed.targetNote}" not found in workspace.`);
+    }
+    return;
+  }
+
   let targetPath = parsed.targetNote
     ? indexer.resolveNotePath(parsed.targetNote, sourceFilePath)
     : sourceFilePath;
@@ -466,6 +536,7 @@ module.exports = {
   findWikilinksInDocument,
   getWikilinkAtPosition,
   resolveNewNoteFolder,
+  resolveMediaFilePath,
   navigateWikilink,
   openLinkAtCursor,
   ObsidianDocumentLinkProvider,

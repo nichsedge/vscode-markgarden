@@ -46,6 +46,7 @@ const {
   extractHeadingSection,
   extractBlockContent,
   parseWikilinkTarget,
+  isMediaFile,
   sanitizeContentForTags
 } = require('../src/indexer');
 const {
@@ -369,6 +370,20 @@ test('parseWikilinkTarget parses block anchors and embeds', () => {
   assert.strictEqual(embedLinks[0].isEmbed, true);
   assert.strictEqual(embedLinks[1].targetNote, 'Normal Link');
   assert.strictEqual(embedLinks[1].isEmbed, false);
+});
+
+test('isMediaFile detects image/media embeds and extractWikilinks filters them out', () => {
+  assert.strictEqual(isMediaFile('kaiki_deishu.jpg'), true);
+  assert.strictEqual(isMediaFile('kaiki_deishu.jpg|300'), true);
+  assert.strictEqual(isMediaFile('diagram.png'), true);
+  assert.strictEqual(isMediaFile('document.pdf'), true);
+  assert.strictEqual(isMediaFile('Note Title.md'), false);
+  assert.strictEqual(isMediaFile('Note Title'), false);
+
+  const md = `Check ![[kaiki_deishu.jpg]] and ![[kaiki_deishu.jpg|300]] and [[Actual Note]].`;
+  const links = extractWikilinks(md);
+  assert.strictEqual(links.length, 1);
+  assert.strictEqual(links[0].targetNote, 'Actual Note');
 });
 
 // --- Hover Note Previews Tests ---

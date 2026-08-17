@@ -209,6 +209,23 @@ function extractBlockContent(content, blockId) {
   return targetBlock || null;
 }
 
+const MEDIA_EXTENSIONS = new Set([
+  'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico', 'tiff', 'tif',
+  'mp3', 'wav', 'm4a', 'ogg', '3gp', 'flac', 'aac',
+  'mp4', 'webm', 'ogv', 'mov', 'mkv',
+  'pdf'
+]);
+
+/**
+ * Checks if a target filename is an embedded image or media attachment.
+ */
+function isMediaFile(filename) {
+  if (!filename) return false;
+  const clean = filename.split('|')[0].trim().split('#')[0].trim();
+  const ext = path.extname(clean).toLowerCase().replace(/^\./, '');
+  return MEDIA_EXTENSIONS.has(ext);
+}
+
 /**
  * Parses wikilink string (e.g. "Note Name#Section|Alias" or "Note#^block-id") into components.
  */
@@ -240,17 +257,21 @@ function parseWikilinkTarget(rawLink) {
     targetNote = text.trim();
   }
 
+  const isMedia = isMediaFile(targetNote);
+
   return {
     raw: rawLink,
     targetNote,
     heading,
     blockId,
-    alias
+    alias,
+    isMedia
   };
 }
 
 /**
  * Extracts all outbound wikilinks and transclusion embeds from markdown content.
+ * Filters out media file attachments (images, PDFs, audio/video).
  */
 function extractWikilinks(content) {
   // Mask frontmatter, code blocks, and comments with spaces to preserve line numbers and character offsets
@@ -263,12 +284,14 @@ function extractWikilinks(content) {
   while ((match = regex.exec(sanitized)) !== null) {
     const isEmbed = match[1] === '![[';
     const parsed = parseWikilinkTarget(match[2]);
-    const charIndex = match.index;
-    const lineNumber = content.slice(0, charIndex).split(/\r?\n/).length - 1;
-    parsed.index = charIndex;
-    parsed.line = lineNumber;
-    parsed.isEmbed = isEmbed;
-    links.push(parsed);
+    if (!parsed.isMedia) {
+      const charIndex = match.index;
+      const lineNumber = content.slice(0, charIndex).split(/\r?\n/).length - 1;
+      parsed.index = charIndex;
+      parsed.line = lineNumber;
+      parsed.isEmbed = isEmbed;
+      links.push(parsed);
+    }
   }
   return links;
 }
@@ -985,5 +1008,6 @@ module.exports = {
   extractHeadingSection,
   extractBlockContent,
   parseWikilinkTarget,
+  isMediaFile,
   sanitizeContentForTags
 };

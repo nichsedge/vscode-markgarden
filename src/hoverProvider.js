@@ -2,7 +2,7 @@ const vscode = require('vscode');
 const fs = require('fs');
 const path = require('path');
 const { parseWikilinkTarget, extractHeadingSection, extractBlockContent, parseFrontmatter } = require('./indexer');
-const { getWikilinkAtPosition } = require('./wikilinks');
+const { getWikilinkAtPosition, resolveMediaFilePath } = require('./wikilinks');
 
 /**
  * Strips frontmatter block from raw markdown content for clean hover display.
@@ -78,7 +78,7 @@ function buildNotePreviewMarkdown(targetPath, parsed, content, maxLength = 1000)
 }
 
 /**
- * HoverProvider that displays instant rich markdown previews for [[wikilinks]], ![[embeds]], #headings, and ^block-ids.
+ * HoverProvider that displays instant rich markdown previews for [[wikilinks]], ![[embeds]], #headings, ^block-ids, and media attachments.
  */
 class ObsidianHoverProvider {
   constructor(indexer) {
@@ -94,6 +94,33 @@ class ObsidianHoverProvider {
     if (!link) return null;
 
     const parsed = parseWikilinkTarget(link.target);
+
+    // Media attachment preview branch
+    if (parsed.isMedia) {
+      const mediaPath = resolveMediaFilePath(parsed.targetNote, document.fileName);
+      const md = new vscode.MarkdownString();
+      md.isTrusted = true;
+      md.supportHtml = true;
+
+      if (mediaPath) {
+        const ext = path.extname(mediaPath).toLowerCase();
+        const imageExts = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico'];
+        if (imageExts.includes(ext)) {
+          const mediaUri = vscode.Uri.file(mediaPath);
+          md.appendMarkdown(`### 🖼️ **${path.basename(mediaPath)}**\n\n![${path.basename(mediaPath)}](${mediaUri.toString()})\n`);
+        } else {
+          const commandArgs = encodeURIComponent(JSON.stringify({
+            target: link.target,
+            sourceFile: document.fileName
+          }));
+          md.appendMarkdown(`### 📄 **${path.basename(mediaPath)}**\n\n*Media attachment*\n\n[▶️ Open File](command:obsidian-notes.openWikilink?${commandArgs})`);
+        }
+      } else {
+        md.appendMarkdown(`### 🖼️ **${parsed.targetNote}**\n\n*Media file not found in workspace.*`);
+      }
+      return new vscode.Hover(md, link.range);
+    }
+
     const targetPath = parsed.targetNote
       ? this.indexer.resolveNotePath(parsed.targetNote, document.fileName)
       : document.fileName;
