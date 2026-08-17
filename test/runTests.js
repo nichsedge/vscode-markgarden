@@ -263,6 +263,45 @@ test('getGraphData produces correct global nodes, links, and local subgraph', ()
   assert.strictEqual(nodeLabels2.includes('Orphan Note'), false);
 });
 
+// --- Backlinks & Unlinked Mentions Tests ---
+console.log('\nBacklinks & Unlinked Mentions:');
+
+test('parseFrontmatter extracts aliases', () => {
+  const md = `---\ntitle: "AI Trading"\naliases: [Trading AI, Algo Trading]\n---\n# Content`;
+  const result = parseFrontmatter(md);
+  assert.strictEqual(result.title, 'AI Trading');
+  assert.strictEqual(result.aliases.has('Trading AI'), true);
+  assert.strictEqual(result.aliases.has('Algo Trading'), true);
+});
+
+test('getBacklinksForFile returns linking notes and line snippets', async () => {
+  const indexer = new WorkspaceNotesIndexer();
+  indexer.indexFileContent('/workspace/target.md', `# Target Note\nMain target.`);
+  indexer.indexFileContent('/workspace/source.md', `Line 1\nCheck [[Target Note]] on line 2.`);
+  indexer._resolveAllLinkTargets();
+
+  const backlinks = await indexer.getBacklinksForFile('/workspace/target.md');
+  assert.strictEqual(backlinks.length, 1);
+  assert.strictEqual(backlinks[0].sourceFilePath, '/workspace/source.md');
+  assert.strictEqual(backlinks[0].snippets.length, 1);
+  assert.strictEqual(backlinks[0].snippets[0].line, 1);
+  assert.strictEqual(backlinks[0].snippets[0].lineText, 'Check [[Target Note]] on line 2.');
+});
+
+test('getUnlinkedMentionsForFile detects title and alias mentions', async () => {
+  const indexer = new WorkspaceNotesIndexer();
+  indexer.indexFileContent('/workspace/target.md', `---\ntitle: "Target Note"\naliases: [Special Alias]\n---\nMain target.`);
+  indexer.indexFileContent('/workspace/mention.md', `I am talking about Target Note in plain text.\nAlso using Special Alias here.`);
+  indexer.indexFileContent('/workspace/existing.md', `Already linked: [[Target Note]].`);
+
+  const unlinked = await indexer.getUnlinkedMentionsForFile('/workspace/target.md');
+  assert.strictEqual(unlinked.length, 1);
+  assert.strictEqual(unlinked[0].sourceFilePath, '/workspace/mention.md');
+  assert.strictEqual(unlinked[0].mentions.length, 2);
+  assert.strictEqual(unlinked[0].mentions[0].term, 'Target Note');
+  assert.strictEqual(unlinked[0].mentions[1].term, 'Special Alias');
+});
+
 console.log(`\nResults: ${testsPassed} passed, ${testsFailed} failed.`);
 if (testsFailed > 0) {
   process.exit(1);

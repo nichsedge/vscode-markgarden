@@ -23,6 +23,7 @@ const {
 const { insertTemplate, formatDateTime, processTemplate, parseTemplateMetadata } = require('./src/templates');
 const { createDailyNote } = require('./src/dailyNotes');
 const { GraphViewManager } = require('./src/graphView');
+const { BacklinksTreeDataProvider, convertUnlinkedMentionToWikilinkCommand } = require('./src/backlinks');
 
 let indexer = null;
 let graphViewManager = null;
@@ -57,12 +58,15 @@ async function activate(context) {
   );
 
   // Register Sidebar Tree Views (with proper disposal)
+  const backlinksTreeDataProvider = new BacklinksTreeDataProvider(indexer);
   const tagsTreeDataProvider = new TagsTreeDataProvider(indexer);
   const categoriesTreeDataProvider = new CategoriesTreeDataProvider(indexer);
 
   context.subscriptions.push(
+    vscode.window.registerTreeDataProvider('obsidian-notes-backlinks', backlinksTreeDataProvider),
     vscode.window.registerTreeDataProvider('obsidian-notes-tags', tagsTreeDataProvider),
     vscode.window.registerTreeDataProvider('obsidian-notes-categories', categoriesTreeDataProvider),
+    backlinksTreeDataProvider,
     tagsTreeDataProvider,
     categoriesTreeDataProvider
   );
@@ -108,7 +112,12 @@ async function activate(context) {
     vscode.commands.registerCommand('obsidian-notes.refreshIndex', () => {
       indexer.rebuildIndex();
       vscode.window.showInformationMessage('Obsidian Notes: Refreshed workspace index.');
-    })
+    }),
+
+    // Backlinks Management
+    vscode.commands.registerCommand('obsidian-notes.togglePinBacklinks', () => backlinksTreeDataProvider.togglePin()),
+    vscode.commands.registerCommand('obsidian-notes.refreshBacklinks', () => backlinksTreeDataProvider.refresh()),
+    vscode.commands.registerCommand('obsidian-notes.convertUnlinkedMentionToWikilink', item => convertUnlinkedMentionToWikilinkCommand(item, indexer))
   ];
 
   context.subscriptions.push(...commands);

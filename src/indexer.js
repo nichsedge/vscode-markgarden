@@ -11,6 +11,7 @@ function parseFrontmatter(content) {
     title: '',
     tags: new Set(),
     categories: new Set(),
+    aliases: new Set(),
     hasFrontmatter: false,
     frontmatterRange: null
   };
@@ -40,6 +41,8 @@ function parseFrontmatter(content) {
           result.tags.add(itemVal);
         } else if (currentKey === 'categories' || currentKey === 'category') {
           result.categories.add(itemVal);
+        } else if (currentKey === 'aliases' || currentKey === 'alias') {
+          result.aliases.add(itemVal);
         }
       }
       continue;
@@ -68,6 +71,12 @@ function parseFrontmatter(content) {
       if (val) {
         const cleaned = val.replace(/[[\]]/g, '');
         cleaned.split(',').map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean).forEach(c => result.categories.add(c));
+      }
+    } else if (key === 'aliases' || key === 'alias') {
+      currentKey = 'aliases';
+      if (val) {
+        const cleaned = val.replace(/[[\]]/g, '');
+        cleaned.split(',').map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean).forEach(a => result.aliases.add(a));
       }
     } else {
       currentKey = key;
@@ -173,12 +182,19 @@ function parseWikilinkTarget(rawLink) {
  * Extracts all outbound wikilinks from markdown content.
  */
 function extractWikilinks(content) {
-  const sanitized = sanitizeContentForTags(content);
+  // Mask frontmatter, code blocks, and comments with spaces to preserve line numbers and character offsets
+  let sanitized = content.replace(/^---\r?\n[\s\S]*?\r?\n---|```[\s\S]*?```|~~~[\s\S]*?~~~|<!--[\s\S]*?-->/g, m => ' '.repeat(m.length));
+  sanitized = sanitized.replace(/`[^`\r\n]+`/g, m => ' '.repeat(m.length));
+
   const links = [];
   const regex = /\[\[([^[\r\n\]]+)\]\]/g;
   let match;
   while ((match = regex.exec(sanitized)) !== null) {
     const parsed = parseWikilinkTarget(match[1]);
+    const charIndex = match.index;
+    const lineNumber = content.slice(0, charIndex).split(/\r?\n/).length - 1;
+    parsed.index = charIndex;
+    parsed.line = lineNumber;
     links.push(parsed);
   }
   return links;
@@ -377,11 +393,13 @@ class WorkspaceNotesIndexer {
       baseName,
       title,
       frontmatterTitle: frontmatter.title || '',
+      aliases: Array.from(frontmatter.aliases),
       headings,
       tags: allTags,
       categories: frontmatter.categories,
       links: wikilinks,
-      resolvedLinks: [] // populated by _resolveLinksForFile
+      resolvedLinks: [], // populated by _resolveLinksForFile
+      _contentLines: content.split(/\r?\n/)
     };
     this.fileIndex.set(filePath, meta);
 
@@ -695,6 +713,157 @@ class WorkspaceNotesIndexer {
       nodes: nodesList,
       links: filteredLinks
     };
+  }
+
+  /**
+   * Returns linked references (backlinks) pointing to targetFilePath.
+   * Format: Array of { sourceFilePath, title, relativePath, snippets: [{ line, lineText, link }] }
+   */
+  async getBacklinksForFile(targetFilePath) {
+    if (!targetFilePath || !this.fileIndex.has(targetFilePath)) {
+      return [];
+    }
+
+    const backlinks = [];
+
+    for (const [sourcePath, meta] of this.fileIndex.entries()) {
+      if (sourcePath === targetFilePath) continue;
+
+      const matchingResolved = (meta.resolvedLinks || []).filter(r => r.targetPath === targetFilePath);
+      if (matchingResolved.length === 0) continue;
+
+      let fileLines = meta._contentLines;
+      if (!fileLines) {
+        try {
+          const content = await fs.promises.readFile(sourcePath, 'utf8');
+          fileLines = content.split(/\r?\n/);
+        } catch {
+          fileLines = [];
+        }
+      }
+
+      const snippets = [];
+      for (const { link } of matchingResolved) {
+        const lineIdx = link.line !== undefined ? link.line : 0;
+        const lineText = fileLines && fileLines[lineIdx] !== undefined ? fileLines[lineIdx].trim() : `[[${link.raw}]]`;
+        snippets.push({
+          line: lineIdx,
+          lineText,
+          link
+        });
+      }
+
+      backlinks.push({
+        sourceFilePath: sourcePath,
+        title: meta.title || meta.baseName,
+        relativePath: meta.relativePath,
+        snippets
+      });
+    }
+
+    return backlinks;
+  }
+
+  /**
+   * Finds unlinked mentions of targetFilePath's title, baseName, or frontmatter aliases in workspace notes.
+   * Format: Array of { sourceFilePath, title, relativePath, mentions: [{ line, lineText, term, matchStart, targetNote }] }
+   */
+  async getUnlinkedMentionsForFile(targetFilePath) {
+    if (!targetFilePath || !this.fileIndex.has(targetFilePath)) {
+      return [];
+    }
+
+    const targetMeta = this.fileIndex.get(targetFilePath);
+    const searchTerms = new Set();
+    if (targetMeta.baseName && targetMeta.baseName.length >= 2) searchTerms.add(targetMeta.baseName);
+    if (targetMeta.title && targetMeta.title.length >= 2) searchTerms.add(targetMeta.title);
+    if (targetMeta.frontmatterTitle && targetMeta.frontmatterTitle.length >= 2) searchTerms.add(targetMeta.frontmatterTitle);
+    if (targetMeta.aliases) {
+      for (const alias of targetMeta.aliases) {
+        if (alias && alias.length >= 2) searchTerms.add(alias);
+      }
+    }
+
+    if (searchTerms.size === 0) return [];
+
+    const unlinkedResults = [];
+
+    const termPatterns = Array.from(searchTerms)
+      .sort((a, b) => b.length - a.length)
+      .map(term => {
+        const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return {
+          term,
+          regex: new RegExp(`\\b${escaped}\\b`, 'gi')
+        };
+      });
+
+    for (const [sourcePath, meta] of this.fileIndex.entries()) {
+      if (sourcePath === targetFilePath) continue;
+
+      let content;
+      if (meta._contentLines) {
+        content = meta._contentLines.join('\n');
+      } else {
+        try {
+          content = await fs.promises.readFile(sourcePath, 'utf8');
+        } catch {
+          continue;
+        }
+      }
+
+      let sanitized = content.replace(/^---\r?\n[\s\S]*?\r?\n---|```[\s\S]*?```|~~~[\s\S]*?~~~|<!--[\s\S]*?-->/g, m => ' '.repeat(m.length));
+      sanitized = sanitized.replace(/`[^`\r\n]+`/g, m => ' '.repeat(m.length));
+      sanitized = sanitized.replace(/\[\[[^[\r\n\]]+\]\]/g, m => ' '.repeat(m.length));
+      sanitized = sanitized.replace(/^[ \t]*#{1,6}[ \t]+.*$/gm, m => ' '.repeat(m.length));
+
+      const originalLines = content.split(/\r?\n/);
+      const sanitizedLines = sanitized.split(/\r?\n/);
+      const mentions = [];
+
+      for (let i = 0; i < sanitizedLines.length; i++) {
+        const lineStr = sanitizedLines[i];
+        if (!lineStr.trim()) continue;
+
+        const matchedRangesOnLine = [];
+
+        for (const { term, regex } of termPatterns) {
+          regex.lastIndex = 0;
+          let m;
+          while ((m = regex.exec(lineStr)) !== null) {
+            const start = m.index;
+            const end = m.index + m[0].length;
+
+            // Check if this match overlaps with a longer term already matched on this line
+            const overlaps = matchedRangesOnLine.some(r => !(end <= r.start || start >= r.end));
+            if (overlaps) continue;
+
+            matchedRangesOnLine.push({ start, end });
+
+            mentions.push({
+              line: i,
+              lineText: originalLines[i] ? originalLines[i].trim() : lineStr.trim(),
+              term,
+              matchStart: start,
+              targetNote: targetMeta.baseName
+            });
+            if (mentions.length >= 10) break;
+          }
+          if (mentions.length >= 10) break;
+        }
+      }
+
+      if (mentions.length > 0) {
+        unlinkedResults.push({
+          sourceFilePath: sourcePath,
+          title: meta.title || meta.baseName,
+          relativePath: meta.relativePath,
+          mentions
+        });
+      }
+    }
+
+    return unlinkedResults;
   }
 
   dispose() {
