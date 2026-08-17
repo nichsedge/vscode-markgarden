@@ -51,6 +51,29 @@ Organize your second brain with full hybrid tag and category support:
   - `Obsidian Notes: Rename Category Across Workspace` (batch updates frontmatter across all markdown notes)
 * **Tag IntelliSense**: Typing `#` provides autocompletion of existing workspace tags (smartly filtered to ignore markdown `# Heading` syntax, code blocks, and URLs).
 
+### 🔍 Hover Note Previews & Transclusion (`![[ ]]`)
+Inspect connected thoughts without losing your place:
+* **Rich Hover Tooltips**: Hover over any `[[Note Name]]`, `[[Note#Section]]`, `[[Note#^block-id]]`, or `![[Embed]]` in the editor to view an instant markdown tooltip showing note title, tags, category badges, and clean note preview.
+* **Anchor-Specific Peeking**: Hovering over a `#heading` or `^block-id` link isolates and previews only that specific subsection or paragraph.
+* **Missing Note Indicator**: Hovering over an uncreated note link displays a one-click *"Create Note"* quick action.
+
+### ✂️ Note Refactor & Zettelkasten Extraction
+Effortlessly distill brain dumps and daily journals into atomic concept notes:
+* **Extract Selection to Note**: Select any markdown text and press `Ctrl+Alt+E` / `Cmd+Alt+E` (or right-click -> *Extract Selection to Note*).
+* **Smart Title Suggestion**: Automatically infers a clean note title from the selection's top heading or opening sentence.
+* **Flexible Replacement Modes**:
+  - Replace with `[[New Note]]` wikilink (default).
+  - Replace with `![[New Note]]` transclusion embed.
+  - Replace with `[[New Note|Custom Alias]]`.
+  - Create note without modifying the selection in source note.
+* **Automatic Frontmatter & Source Backlinks**: Generated notes automatically include YAML frontmatter with date and a bidirectional backlink `source: "[[Source Note]]"`.
+
+### 📌 Block References (`^block-id`)
+Link to granular paragraphs, quotes, and list items across your workspace:
+* **Block Anchors**: End any paragraph or bullet item with ` ^my-block-id`.
+* **Block Autocompletion**: Typing `[[Note#^` or `[[#^` suggests all indexed block IDs in the note with preview snippets.
+* **Block Navigation & Definition**: `Ctrl/Cmd+Click` or `F12` on `[[Note#^my-block-id]]` jumps and centers directly on that block's line.
+
 ### 📅 Daily Note
 Create or open today's daily log file instantly. 
 * **Command**: `Obsidian Notes: Create Daily Note`
@@ -95,6 +118,7 @@ Placeholders are resolved at the moment of file creation or insertion relative t
 |---|---|---|
 | `Ctrl+Alt+G` / `Cmd+Alt+G` | Open Graph View | Global |
 | `Alt+Enter` | Follow Wikilink Under Cursor | Active Markdown Document |
+| `Ctrl+Alt+E` / `Cmd+Alt+E` | Extract Selection to Note (Zettelkasten) | Active Selection in Markdown |
 | `Ctrl+Alt+D` / `Cmd+Alt+D` | Create / Open Today's Daily Note | Global |
 | `Ctrl+Alt+T` / `Cmd+Alt+T` | Insert Markdown Template | Active Editor |
 
@@ -106,6 +130,8 @@ Customize settings inside your `settings.json` (Workspace or User) under the `ob
 
 | Setting | Type | Default | Description |
 |---|---|---|---|
+| `obsidian-notes.hoverPreviewEnabled` | `boolean` | `true` | Show rich markdown preview tooltip when hovering over `[[links]]`, `![[embeds]]`, headings, and blocks. |
+| `obsidian-notes.hoverPreviewMaxLength` | `number` | `1200` | Maximum character length for hover preview body before truncation. |
 | `obsidian-notes.newNoteFolderStrategy` | `string` | `"root"` | Where to create new notes when following a non-existent `[[link]]`: `"root"`, `"sameAsCurrent"`, or `"custom"`. |
 | `obsidian-notes.notesFolder` | `string` | `""` | Destination folder path for new notes when strategy is `"custom"`. |
 | `obsidian-notes.tagPrefix` | `string` | `"frontmatter"` | Default insertion style when adding tags: `"frontmatter"` (YAML frontmatter) or `"inline"` (`#tag` at end of file). |

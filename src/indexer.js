@@ -146,12 +146,77 @@ function extractHeadings(content) {
 }
 
 /**
- * Parses wikilink string (e.g. "Note Name#Section|Alias") into components.
+ * Extracts block references (^block-id) from markdown content.
+ * Returns array of { id, line, text }
+ */
+function extractBlockReferences(content) {
+  const blocks = [];
+  const lines = content.split(/\r?\n/);
+  const blockRegex = /(?:^|[ \t]+)\^([a-zA-Z0-9_-]+)[ \t]*$/;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const match = line.match(blockRegex);
+    if (match) {
+      const blockId = match[1];
+      // Strip the trailing ^blockId marker for display/content
+      const cleanText = line.replace(blockRegex, '').trim();
+      blocks.push({
+        id: blockId,
+        line: i,
+        text: cleanText || line.trim()
+      });
+    }
+  }
+  return blocks;
+}
+
+/**
+ * Extracts the content under a specific heading up to the next heading of same or higher level.
+ */
+function extractHeadingSection(content, headingText) {
+  if (!content || !headingText) return null;
+  const headings = extractHeadings(content);
+  const targetHeading = headings.find(h => h.text.toLowerCase() === headingText.toLowerCase());
+  if (!targetHeading) return null;
+
+  const lines = content.split(/\r?\n/);
+  const startLine = targetHeading.line;
+  let endLine = lines.length;
+
+  for (const h of headings) {
+    if (h.line > startLine && h.level <= targetHeading.level) {
+      endLine = h.line;
+      break;
+    }
+  }
+
+  const sectionLines = lines.slice(startLine, endLine);
+  return {
+    heading: targetHeading,
+    content: sectionLines.join('\n').trim()
+  };
+}
+
+/**
+ * Extracts content of a specific block by blockId (^block-id).
+ */
+function extractBlockContent(content, blockId) {
+  if (!content || !blockId) return null;
+  const blocks = extractBlockReferences(content);
+  const cleanId = blockId.startsWith('^') ? blockId.slice(1) : blockId;
+  const targetBlock = blocks.find(b => b.id.toLowerCase() === cleanId.toLowerCase());
+  return targetBlock || null;
+}
+
+/**
+ * Parses wikilink string (e.g. "Note Name#Section|Alias" or "Note#^block-id") into components.
  */
 function parseWikilinkTarget(rawLink) {
   let text = rawLink.trim();
   let alias = '';
   let heading = '';
+  let blockId = '';
   let targetNote = '';
 
   // Check for alias: [[target|alias]] or [[target\|alias]]
@@ -161,10 +226,15 @@ function parseWikilinkTarget(rawLink) {
     text = text.slice(0, pipeIdx).trim();
   }
 
-  // Check for heading anchor: [[target#heading]] or [[#heading]]
+  // Check for heading or block anchor: [[target#heading]] or [[target#^block-id]]
   const hashIdx = text.indexOf('#');
   if (hashIdx !== -1) {
-    heading = text.slice(hashIdx + 1).trim();
+    const anchor = text.slice(hashIdx + 1).trim();
+    if (anchor.startsWith('^')) {
+      blockId = anchor.slice(1).trim();
+    } else {
+      heading = anchor;
+    }
     targetNote = text.slice(0, hashIdx).trim();
   } else {
     targetNote = text.trim();
@@ -174,12 +244,13 @@ function parseWikilinkTarget(rawLink) {
     raw: rawLink,
     targetNote,
     heading,
+    blockId,
     alias
   };
 }
 
 /**
- * Extracts all outbound wikilinks from markdown content.
+ * Extracts all outbound wikilinks and transclusion embeds from markdown content.
  */
 function extractWikilinks(content) {
   // Mask frontmatter, code blocks, and comments with spaces to preserve line numbers and character offsets
@@ -187,14 +258,16 @@ function extractWikilinks(content) {
   sanitized = sanitized.replace(/`[^`\r\n]+`/g, m => ' '.repeat(m.length));
 
   const links = [];
-  const regex = /\[\[([^[\r\n\]]+)\]\]/g;
+  const regex = /(!?\[\[)([^[\r\n\]]+)\]\]/g;
   let match;
   while ((match = regex.exec(sanitized)) !== null) {
-    const parsed = parseWikilinkTarget(match[1]);
+    const isEmbed = match[1] === '![[';
+    const parsed = parseWikilinkTarget(match[2]);
     const charIndex = match.index;
     const lineNumber = content.slice(0, charIndex).split(/\r?\n/).length - 1;
     parsed.index = charIndex;
     parsed.line = lineNumber;
+    parsed.isEmbed = isEmbed;
     links.push(parsed);
   }
   return links;
@@ -385,6 +458,11 @@ class WorkspaceNotesIndexer {
     const title = frontmatter.title || primaryHeading || baseName;
 
     const wikilinks = extractWikilinks(content);
+    const blocks = extractBlockReferences(content);
+    const blockMap = new Map();
+    for (const b of blocks) {
+      blockMap.set(b.id.toLowerCase(), b);
+    }
 
     // Record file entry — store only what's needed, not the full frontmatter object
     const meta = {
@@ -398,6 +476,8 @@ class WorkspaceNotesIndexer {
       tags: allTags,
       categories: frontmatter.categories,
       links: wikilinks,
+      blocks,
+      blockMap,
       resolvedLinks: [], // populated by _resolveLinksForFile
       _contentLines: content.split(/\r?\n/)
     };
@@ -901,6 +981,9 @@ module.exports = {
   extractInlineTags,
   extractHeadings,
   extractWikilinks,
+  extractBlockReferences,
+  extractHeadingSection,
+  extractBlockContent,
   parseWikilinkTarget,
   sanitizeContentForTags
 };

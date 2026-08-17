@@ -43,8 +43,8 @@ class DocumentParseCache {
 const wikilinkCache = new DocumentParseCache();
 
 /**
- * Finds all wikilink matches in a text document.
- * Returns array of { range, target, raw, offset }
+ * Finds all wikilink and transclusion embed matches in a text document.
+ * Returns array of { range, target, raw, offset, isEmbed }
  * Uses an LRU cache to avoid re-parsing unchanged documents.
  */
 function findWikilinksInDocument(document) {
@@ -53,17 +53,19 @@ function findWikilinksInDocument(document) {
 
   const text = document.getText();
   const wikilinks = [];
-  const regex = /\[\[([^[\r\n\]]+)\]\]/g;
+  const regex = /(!?\[\[)([^[\r\n\]]+)\]\]/g;
   let match;
 
   while ((match = regex.exec(text)) !== null) {
+    const isEmbed = match[1] === '![[';
     const startPos = document.positionAt(match.index);
     const endPos = document.positionAt(match.index + match[0].length);
     wikilinks.push({
       range: new vscode.Range(startPos, endPos),
-      target: match[1],
+      target: match[2],
       raw: match[0],
-      offset: match.index
+      offset: match.index,
+      isEmbed
     });
   }
 
@@ -135,8 +137,12 @@ class ObsidianDocumentLinkProvider {
 
       const linkUri = vscode.Uri.parse(`command:obsidian-notes.openWikilink?${commandArgs}`);
       const docLink = new vscode.DocumentLink(item.range, linkUri);
+      let anchorText = '';
+      if (parsed.blockId) anchorText = ` #^${parsed.blockId}`;
+      else if (parsed.heading) anchorText = ` #${parsed.heading}`;
+
       docLink.tooltip = targetPath
-        ? `Open "${parsed.targetNote || path.basename(document.fileName, '.md')}"${parsed.heading ? ' #' + parsed.heading : ''} (Ctrl/Cmd+Click)`
+        ? `Open "${parsed.targetNote || path.basename(document.fileName, '.md')}"${anchorText} (Ctrl/Cmd+Click)`
         : `Create "${parsed.targetNote}" (Ctrl/Cmd+Click)`;
       return docLink;
     });
@@ -170,9 +176,29 @@ class ObsidianDefinitionProvider {
     }
 
     let targetLine = 0;
-    if (parsed.heading) {
+    const targetMeta = this.indexer.fileIndex.get(targetPath);
+
+    if (parsed.blockId) {
+      const cleanBlockId = parsed.blockId.toLowerCase();
+      if (targetMeta && targetMeta.blockMap && targetMeta.blockMap.has(cleanBlockId)) {
+        targetLine = targetMeta.blockMap.get(cleanBlockId).line;
+      } else {
+        try {
+          const content = fs.readFileSync(targetPath, 'utf8');
+          const lines = content.split(/\r?\n/);
+          const blockRegex = new RegExp(`(?:^|[ \\t]+)\\^${cleanBlockId}[ \\t]*$`, 'i');
+          for (let i = 0; i < lines.length; i++) {
+            if (blockRegex.test(lines[i])) {
+              targetLine = i;
+              break;
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+    } else if (parsed.heading) {
       // Check indexed headings first before reading from disk
-      const targetMeta = this.indexer.fileIndex.get(targetPath);
       if (targetMeta && targetMeta.headings) {
         const headingMatch = targetMeta.headings.find(h => h.text.toLowerCase() === parsed.heading.toLowerCase());
         if (headingMatch) {
@@ -200,7 +226,7 @@ class ObsidianDefinitionProvider {
 }
 
 /**
- * CompletionItemProvider for [[wikilinks]] note titles and #headings.
+ * CompletionItemProvider for [[wikilinks]] note titles, #headings, and #^blocks.
  */
 class ObsidianCompletionItemProvider {
   constructor(indexer) {
@@ -220,8 +246,9 @@ class ObsidianCompletionItemProvider {
     const hashIndex = textAfterBracket.indexOf('#');
 
     if (hashIndex !== -1) {
-      // Autocomplete headings within the target note (or current note if [[#...)
+      // Autocomplete headings or blocks within the target note (or current note if [[#...)
       const targetNoteName = textAfterBracket.substring(0, hashIndex).trim();
+      const searchAnchor = textAfterBracket.substring(hashIndex + 1);
       let targetFile = document.fileName;
 
       if (targetNoteName) {
@@ -229,10 +256,25 @@ class ObsidianCompletionItemProvider {
       }
 
       if (targetFile) {
-        // Use indexed headings if available
         const targetMeta = this.indexer.fileIndex.get(targetFile);
-        const headings = targetMeta ? targetMeta.headings : null;
 
+        // If typing #^..., prioritize block references
+        if (searchAnchor.startsWith('^')) {
+          const blocks = targetMeta ? targetMeta.blocks : null;
+          if (blocks) {
+            for (const b of blocks) {
+              const item = new vscode.CompletionItem(`^${b.id}`, vscode.CompletionItemKind.Reference);
+              item.detail = `Block reference in ${path.basename(targetFile)}`;
+              item.documentation = b.text;
+              item.insertText = `^${b.id}`;
+              items.push(item);
+            }
+          }
+          return items;
+        }
+
+        // Headings autocompletion
+        const headings = targetMeta ? targetMeta.headings : null;
         if (headings) {
           for (const h of headings) {
             const item = new vscode.CompletionItem(h.text, vscode.CompletionItemKind.Reference);
@@ -253,6 +295,17 @@ class ObsidianCompletionItemProvider {
             }
           } catch {
             // ignore
+          }
+        }
+
+        // Also suggest block references if available
+        if (targetMeta && targetMeta.blocks && targetMeta.blocks.length > 0) {
+          for (const b of targetMeta.blocks) {
+            const item = new vscode.CompletionItem(`^${b.id}`, vscode.CompletionItemKind.Reference);
+            item.detail = `Block reference in ${path.basename(targetFile)}`;
+            item.documentation = b.text;
+            item.insertText = `^${b.id}`;
+            items.push(item);
           }
         }
       }
@@ -332,6 +385,36 @@ async function navigateWikilink(targetStr, sourceFilePath, indexer) {
   try {
     const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(targetPath));
     const editor = await vscode.window.showTextDocument(doc);
+
+    // If block anchor is present, jump to block
+    if (parsed.blockId) {
+      const cleanBlockId = parsed.blockId.toLowerCase();
+      const targetMeta = indexer.fileIndex.get(targetPath);
+      let targetLine = -1;
+
+      if (targetMeta && targetMeta.blockMap && targetMeta.blockMap.has(cleanBlockId)) {
+        targetLine = targetMeta.blockMap.get(cleanBlockId).line;
+      } else {
+        const content = doc.getText();
+        const lines = content.split(/\r?\n/);
+        const blockRegex = new RegExp(`(?:^|[ \\t]+)\\^${cleanBlockId}[ \\t]*$`, 'i');
+        for (let i = 0; i < lines.length; i++) {
+          if (blockRegex.test(lines[i])) {
+            targetLine = i;
+            break;
+          }
+        }
+      }
+
+      if (targetLine !== -1) {
+        const pos = new vscode.Position(targetLine, 0);
+        editor.selection = new vscode.Selection(pos, pos);
+        editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+        return;
+      } else {
+        vscode.window.showWarningMessage(`Obsidian Notes: Block reference "^${parsed.blockId}" not found in "${path.basename(targetPath)}".`);
+      }
+    }
 
     // If heading anchor is present, jump to heading
     if (parsed.heading) {

@@ -24,6 +24,8 @@ const { insertTemplate, formatDateTime, processTemplate, parseTemplateMetadata }
 const { createDailyNote } = require('./src/dailyNotes');
 const { GraphViewManager } = require('./src/graphView');
 const { BacklinksTreeDataProvider, convertUnlinkedMentionToWikilinkCommand } = require('./src/backlinks');
+const { ObsidianHoverProvider } = require('./src/hoverProvider');
+const { extractSelectionToNote } = require('./src/noteRefactor');
 
 let indexer = null;
 let graphViewManager = null;
@@ -49,12 +51,14 @@ async function activate(context) {
   const defProvider = new ObsidianDefinitionProvider(indexer);
   const wikilinkCompletionProvider = new ObsidianCompletionItemProvider(indexer);
   const hashtagCompletionProvider = new ObsidianHashtagCompletionItemProvider(indexer);
+  const hoverProvider = new ObsidianHoverProvider(indexer);
 
   context.subscriptions.push(
     vscode.languages.registerDocumentLinkProvider(markdownSelector, docLinkProvider),
     vscode.languages.registerDefinitionProvider(markdownSelector, defProvider),
     vscode.languages.registerCompletionItemProvider(markdownSelector, wikilinkCompletionProvider, '['),
-    vscode.languages.registerCompletionItemProvider(markdownSelector, hashtagCompletionProvider, '#')
+    vscode.languages.registerCompletionItemProvider(markdownSelector, hashtagCompletionProvider, '#'),
+    vscode.languages.registerHoverProvider(markdownSelector, hoverProvider)
   );
 
   // Register Sidebar Tree Views (with proper disposal)
@@ -117,7 +121,10 @@ async function activate(context) {
     // Backlinks Management
     vscode.commands.registerCommand('obsidian-notes.togglePinBacklinks', () => backlinksTreeDataProvider.togglePin()),
     vscode.commands.registerCommand('obsidian-notes.refreshBacklinks', () => backlinksTreeDataProvider.refresh()),
-    vscode.commands.registerCommand('obsidian-notes.convertUnlinkedMentionToWikilink', item => convertUnlinkedMentionToWikilinkCommand(item, indexer))
+    vscode.commands.registerCommand('obsidian-notes.convertUnlinkedMentionToWikilink', item => convertUnlinkedMentionToWikilinkCommand(item, indexer)),
+
+    // Note Refactor & Zettelkasten Extraction
+    vscode.commands.registerCommand('obsidian-notes.extractSelectionToNote', () => extractSelectionToNote(indexer))
   ];
 
   context.subscriptions.push(...commands);

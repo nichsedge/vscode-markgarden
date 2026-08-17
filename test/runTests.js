@@ -12,6 +12,10 @@ Module.prototype.require = function(path) {
         dispose() {}
       },
       Range: class { constructor(start, end) { this.start = start; this.end = end; } },
+      MarkdownString: class {
+        constructor(val) { this.value = val || ''; this.isTrusted = false; this.supportHtml = false; }
+        appendMarkdown(str) { this.value += str; }
+      },
       Uri: {
         file: (p) => ({ fsPath: p, path: p, toString: () => `file://${p}` }),
         parse: (s) => ({ fsPath: s, path: s, toString: () => s })
@@ -38,9 +42,20 @@ const {
   extractInlineTags,
   extractHeadings,
   extractWikilinks,
+  extractBlockReferences,
+  extractHeadingSection,
+  extractBlockContent,
   parseWikilinkTarget,
   sanitizeContentForTags
 } = require('../src/indexer');
+const {
+  buildNotePreviewMarkdown,
+  stripFrontmatter
+} = require('../src/hoverProvider');
+const {
+  deriveDefaultTitle,
+  generateRefactoredNoteContent
+} = require('../src/noteRefactor');
 const {
   addTagToMarkdown,
   removeTagFromMarkdown,
@@ -300,6 +315,115 @@ test('getUnlinkedMentionsForFile detects title and alias mentions', async () => 
   assert.strictEqual(unlinked[0].mentions.length, 2);
   assert.strictEqual(unlinked[0].mentions[0].term, 'Target Note');
   assert.strictEqual(unlinked[0].mentions[1].term, 'Special Alias');
+});
+
+// --- Block References & Section Extraction Tests ---
+console.log('\nBlock References & Section Extraction:');
+
+test('extractBlockReferences finds block IDs and stripped text', () => {
+  const md = `# Title\n\nFirst paragraph with a quote. ^quote-1\n\n- List item 1\n- List item 2 ^item-2\n\nRegular paragraph without block.`;
+  const blocks = extractBlockReferences(md);
+  assert.strictEqual(blocks.length, 2);
+  assert.strictEqual(blocks[0].id, 'quote-1');
+  assert.strictEqual(blocks[0].line, 2);
+  assert.strictEqual(blocks[0].text, 'First paragraph with a quote.');
+  assert.strictEqual(blocks[1].id, 'item-2');
+  assert.strictEqual(blocks[1].line, 5);
+  assert.strictEqual(blocks[1].text, '- List item 2');
+});
+
+test('extractBlockContent locates specific block by id', () => {
+  const md = `Intro text.\n\nImportant insight on PKM workflows. ^pkm-insight\n\nOutro text.`;
+  const block = extractBlockContent(md, 'pkm-insight');
+  assert.notStrictEqual(block, null);
+  assert.strictEqual(block.id, 'pkm-insight');
+  assert.strictEqual(block.text, 'Important insight on PKM workflows.');
+
+  const missing = extractBlockContent(md, 'non-existent');
+  assert.strictEqual(missing, null);
+});
+
+test('extractHeadingSection extracts heading content without bleeding into next heading', () => {
+  const md = `# Overview\nIntro content.\n\n## Section One\nContent for section one.\n### Subsection 1.1\nDetails here.\n\n## Section Two\nContent for section two.`;
+  const section = extractHeadingSection(md, 'Section One');
+  assert.notStrictEqual(section, null);
+  assert.strictEqual(section.heading.text, 'Section One');
+  assert.strictEqual(section.content.includes('Content for section one.'), true);
+  assert.strictEqual(section.content.includes('Subsection 1.1'), true);
+  assert.strictEqual(section.content.includes('Section Two'), false);
+});
+
+test('parseWikilinkTarget parses block anchors and embeds', () => {
+  const blockLink = parseWikilinkTarget('My Note#^block-123');
+  assert.strictEqual(blockLink.targetNote, 'My Note');
+  assert.strictEqual(blockLink.blockId, 'block-123');
+  assert.strictEqual(blockLink.heading, '');
+
+  const localBlock = parseWikilinkTarget('#^local-id');
+  assert.strictEqual(localBlock.targetNote, '');
+  assert.strictEqual(localBlock.blockId, 'local-id');
+
+  const embedLinks = extractWikilinks('Look at ![[Embedded Note]] and [[Normal Link]].');
+  assert.strictEqual(embedLinks.length, 2);
+  assert.strictEqual(embedLinks[0].targetNote, 'Embedded Note');
+  assert.strictEqual(embedLinks[0].isEmbed, true);
+  assert.strictEqual(embedLinks[1].targetNote, 'Normal Link');
+  assert.strictEqual(embedLinks[1].isEmbed, false);
+});
+
+// --- Hover Note Previews Tests ---
+console.log('\nHover Note Previews:');
+
+test('stripFrontmatter removes frontmatter block cleanly', () => {
+  const md = `---\ntitle: "Hello"\n---\nActual content here.`;
+  assert.strictEqual(stripFrontmatter(md), 'Actual content here.');
+});
+
+test('buildNotePreviewMarkdown formats whole note with frontmatter tags and badges', () => {
+  const md = `---\ntitle: "Deep Learning Guide"\ntags: [ai, ml]\ncategory: Technology\n---\n# Deep Learning\n\nNeural networks overview.`;
+  const parsed = parseWikilinkTarget('Deep Learning Guide');
+  const hoverMd = buildNotePreviewMarkdown('/workspace/Deep Learning Guide.md', parsed, md);
+  assert.strictEqual(hoverMd.value.includes('Deep Learning Guide'), true);
+  assert.strictEqual(hoverMd.value.includes('🏷️ `#ai` `#ml`'), true);
+  assert.strictEqual(hoverMd.value.includes('📁 `Technology`'), true);
+  assert.strictEqual(hoverMd.value.includes('Neural networks overview.'), true);
+  assert.strictEqual(hoverMd.value.includes('---'), true);
+});
+
+test('buildNotePreviewMarkdown formats heading preview specifically', () => {
+  const md = `# Note\n\n## Subtopic\nTargeted subtopic details.\n\n## Another`;
+  const parsed = parseWikilinkTarget('Note#Subtopic');
+  const hoverMd = buildNotePreviewMarkdown('/workspace/Note.md', parsed, md);
+  assert.strictEqual(hoverMd.value.includes('🔖 **Note** `#Subtopic`'), true);
+  assert.strictEqual(hoverMd.value.includes('Targeted subtopic details.'), true);
+  assert.strictEqual(hoverMd.value.includes('Another'), false);
+});
+
+test('buildNotePreviewMarkdown formats block reference preview specifically', () => {
+  const md = `# Note\n\nKey finding statement. ^key-finding\n\nOther text.`;
+  const parsed = parseWikilinkTarget('Note#^key-finding');
+  const hoverMd = buildNotePreviewMarkdown('/workspace/Note.md', parsed, md);
+  assert.strictEqual(hoverMd.value.includes('📌 **Note** `^key-finding`'), true);
+  assert.strictEqual(hoverMd.value.includes('Key finding statement.'), true);
+  assert.strictEqual(hoverMd.value.includes('Other text.'), false);
+});
+
+// --- Note Refactor Tests ---
+console.log('\nNote Refactor & Zettelkasten:');
+
+test('deriveDefaultTitle derives clean title from headers or sentences', () => {
+  assert.strictEqual(deriveDefaultTitle('## Advanced Prompt Engineering\nSome text'), 'Advanced Prompt Engineering');
+  assert.strictEqual(deriveDefaultTitle('- [ ] Research quantum algorithms for optimization'), 'Research quantum algorithms for optimization');
+  assert.strictEqual(deriveDefaultTitle('> Quote from literature book'), 'Quote from literature book');
+  assert.strictEqual(deriveDefaultTitle('Plain first sentence of a paragraph.'), 'Plain first sentence of a paragraph.');
+});
+
+test('generateRefactoredNoteContent builds valid frontmatter and backlink', () => {
+  const content = generateRefactoredNoteContent('Atomic Idea', 'This is the extracted body.', 'Daily Log 2026-08-17', '2026-08-17T00:00:00Z');
+  assert.strictEqual(content.includes('title: "Atomic Idea"'), true);
+  assert.strictEqual(content.includes('source: "[[Daily Log 2026-08-17]]"'), true);
+  assert.strictEqual(content.includes('# Atomic Idea'), true);
+  assert.strictEqual(content.includes('This is the extracted body.'), true);
 });
 
 console.log(`\nResults: ${testsPassed} passed, ${testsFailed} failed.`);

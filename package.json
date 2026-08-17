@@ -2,7 +2,7 @@
   "name": "obsidian-notes",
   "displayName": "Obsidian Notes Integration",
   "description": "Obsidian-like daily notes, template insertion, Wikilinks navigation, category/tag management, and interactive graph view for digital garden workspaces.",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "publisher": "al",
   "author": {
     "name": "Al"
@@ -17,7 +17,7 @@
   },
   "homepage": "https://github.com/nichsedge/vscode-obsidian-notes#readme",
   "engines": {
-    "vscode": "^1.74.0"
+    "vscode": "^1.75.0"
   },
   "categories": [
     "Other",
@@ -25,10 +25,6 @@
     "Visualization"
   ],
   "activationEvents": [
-    "onLanguage:markdown",
-    "onView:obsidian-notes-tags",
-    "onView:obsidian-notes-categories",
-    "onView:obsidian-notes-backlinks",
     "onStartupFinished"
   ],
   "main": "./extension.js",
@@ -41,7 +37,7 @@
   },
   "devDependencies": {
     "@types/node": "^16.11.7",
-    "@types/vscode": "^1.74.0",
+    "@types/vscode": "^1.75.0",
     "@vscode/vsce": "^2.15.0",
     "eslint": "^8.28.0"
   },
@@ -161,6 +157,12 @@
         "title": "Convert to Wikilink",
         "category": "Obsidian Notes",
         "icon": "$(link)"
+      },
+      {
+        "command": "obsidian-notes.extractSelectionToNote",
+        "title": "Extract Selection to Note (Zettelkasten Refactor)",
+        "category": "Obsidian Notes",
+        "icon": "$(symbol-file)"
       }
     ],
     "menus": {
@@ -217,6 +219,11 @@
       ],
       "editor/context": [
         {
+          "command": "obsidian-notes.extractSelectionToNote",
+          "when": "editorHasSelection && editorTextFocus && editorLangId == markdown",
+          "group": "1_modification"
+        },
+        {
           "command": "obsidian-notes.openLinkAtCursor",
           "when": "editorTextFocus && editorLangId == markdown",
           "group": "navigation"
@@ -248,11 +255,27 @@
         "command": "obsidian-notes.openLinkAtCursor",
         "key": "alt+enter",
         "when": "editorTextFocus && editorLangId == markdown"
+      },
+      {
+        "command": "obsidian-notes.extractSelectionToNote",
+        "key": "ctrl+alt+e",
+        "mac": "cmd+alt+e",
+        "when": "editorHasSelection && editorTextFocus && editorLangId == markdown"
       }
     ],
     "configuration": {
       "title": "Obsidian Notes",
       "properties": {
+        "obsidian-notes.hoverPreviewEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show rich markdown preview tooltip when hovering over [[wikilinks]], ![[embeds]], headings, and block references."
+        },
+        "obsidian-notes.hoverPreviewMaxLength": {
+          "type": "number",
+          "default": 1200,
+          "description": "Maximum character length for hover preview body before truncation."
+        },
         "obsidian-notes.templatesFolder": {
           "type": "string",
           "default": "templates",
