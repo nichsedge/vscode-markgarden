@@ -352,19 +352,54 @@ function extractWikilinks(content) {
   const links = [];
   const regex = /(!?\[\[)([^[\r\n\]]+)\]\]/g;
   let match;
+  let lastIndex = 0;
+  let currentLine = 0;
+
   while ((match = regex.exec(sanitized)) !== null) {
     const isEmbed = match[1] === '![[';
     const parsed = parseWikilinkTarget(match[2]);
     if (!parsed.isMedia) {
       const charIndex = match.index;
-      const lineNumber = content.slice(0, charIndex).split(/\r?\n/).length - 1;
+      for (let i = lastIndex; i < charIndex; i++) {
+        if (content.charCodeAt(i) === 10) {
+          currentLine++;
+        }
+      }
+      lastIndex = charIndex;
+
       parsed.index = charIndex;
-      parsed.line = lineNumber;
+      parsed.line = currentLine;
       parsed.isEmbed = isEmbed;
       links.push(parsed);
     }
   }
   return links;
+}
+
+/**
+ * Extracts outbound media file targets (images, PDFs, audio/video) from wikilinks and markdown embeds.
+ */
+function extractMediaLinks(content) {
+  let sanitized = content.replace(/^---\r?\n[\s\S]*?\r?\n---|```[\s\S]*?```|~~~[\s\S]*?~~~|<!--[\s\S]*?-->/g, m => ' '.repeat(m.length));
+  sanitized = sanitized.replace(/`[^`\r\n]+`/g, m => ' '.repeat(m.length));
+
+  const mediaList = [];
+  const regex = /(!?\[\[)([^[\r\n\]]+)\]\]|(!?\[[^\]]*\]\(([^)\r\n]+)\))/g;
+  let match;
+  while ((match = regex.exec(sanitized)) !== null) {
+    if (match[2]) {
+      const parsed = parseWikilinkTarget(match[2]);
+      if (parsed.isMedia && parsed.targetNote) {
+        mediaList.push(parsed.targetNote);
+      }
+    } else if (match[4]) {
+      const target = match[4].split(/[#?]/)[0].trim();
+      if (isMediaFile(target)) {
+        mediaList.push(target);
+      }
+    }
+  }
+  return mediaList;
 }
 
 /**
@@ -376,6 +411,7 @@ class WorkspaceNotesIndexer {
     this.tagIndex = new Map(); // tag -> Set<filePath>
     this.categoryIndex = new Map(); // category -> Set<filePath>
     this.titleToPathIndex = new Map(); // lowercase note name (without .md) -> Set<filePath>
+    this.normalizedTitleIndex = new Map(); // normalized key (without space/dash/underscore) -> Set<filePath>
     this.mediaToPathIndex = new Map(); // lowercase media basename -> Set<filePath>
     this.propertyKeyIndex = new Map(); // lowercase property key -> Set<filePath>
     this.propertyValueIndex = new Map(); // lowercase property key -> Set<string value>
@@ -388,10 +424,28 @@ class WorkspaceNotesIndexer {
     this._debounceTimers = new Map(); // filePath -> timerId (per-file debouncing)
     this._disposables = [];
 
+    // Cached configuration values
+    this._cachedTemplatesFolder = 'templates';
+    this._cachedExcludeTemplates = true;
+    this._updateConfigCache();
+
     // Cached sorted results with dirty flag
     this._cachedTags = null;
     this._cachedCategories = null;
     this._indexDirty = true;
+  }
+
+  /**
+   * Updates cached settings from workspace configuration.
+   */
+  _updateConfigCache() {
+    try {
+      const config = vscode.workspace.getConfiguration('obsidian-notes');
+      this._cachedTemplatesFolder = config.get('templatesFolder', 'templates') || 'templates';
+      this._cachedExcludeTemplates = config.get('excludeTemplatesFromIndex', true);
+    } catch {
+      // ignore
+    }
   }
 
   /**
@@ -412,6 +466,7 @@ class WorkspaceNotesIndexer {
     // Watch for configuration changes that might affect exclusions or folders
     const configDisposable = vscode.workspace.onDidChangeConfiguration(e => {
       if (e.affectsConfiguration('obsidian-notes')) {
+        this._updateConfigCache();
         this.rebuildIndex();
       }
     });
@@ -424,10 +479,12 @@ class WorkspaceNotesIndexer {
    */
   async rebuildIndex() {
     this.isIndexing = true;
+    this._updateConfigCache();
     this.fileIndex.clear();
     this.tagIndex.clear();
     this.categoryIndex.clear();
     this.titleToPathIndex.clear();
+    this.normalizedTitleIndex.clear();
     this.mediaToPathIndex.clear();
     this.propertyKeyIndex.clear();
     this.propertyValueIndex.clear();
@@ -600,11 +657,8 @@ class WorkspaceNotesIndexer {
    */
   _shouldIgnore(filePath) {
     const normalized = filePath.replace(/\\/g, '/');
-    const config = vscode.workspace.getConfiguration('obsidian-notes');
-    const templatesFolder = config.get('templatesFolder', 'templates');
-    const excludeTemplates = config.get('excludeTemplatesFromIndex', true);
-    if (excludeTemplates && templatesFolder) {
-      const cleanFolder = templatesFolder.replace(/^\/+|\/+$/g, '');
+    if (this._cachedExcludeTemplates && this._cachedTemplatesFolder) {
+      const cleanFolder = this._cachedTemplatesFolder.replace(/^\/+|\/+$/g, '');
       if (cleanFolder && (normalized.includes(`/${cleanFolder}/`) || normalized.startsWith(`${cleanFolder}/`))) {
         return true;
       }
@@ -636,6 +690,7 @@ class WorkspaceNotesIndexer {
     const title = frontmatter.title || primaryHeading || baseName;
 
     const wikilinks = extractWikilinks(content);
+    const mediaLinks = extractMediaLinks(content);
     const blocks = extractBlockReferences(content);
     const blockMap = new Map();
     for (const b of blocks) {
@@ -655,9 +710,11 @@ class WorkspaceNotesIndexer {
       categories: frontmatter.categories,
       properties: frontmatter.properties,
       links: wikilinks,
+      mediaLinks,
       blocks,
       blockMap,
       resolvedLinks: [], // populated by _resolveLinksForFile
+      resolvedMediaLinks: [], // populated by _resolveLinksForFile
       _content: content
     };
     this.fileIndex.set(filePath, meta);
@@ -707,18 +764,36 @@ class WorkspaceNotesIndexer {
     }
     this.titleToPathIndex.get(baseKey).add(filePath);
 
+    const normBase = baseKey.replace(/[\s\-_]/g, '');
+    if (!this.normalizedTitleIndex.has(normBase)) {
+      this.normalizedTitleIndex.set(normBase, new Set());
+    }
+    this.normalizedTitleIndex.get(normBase).add(filePath);
+
     if (frontmatter.title) {
       const titleKey = frontmatter.title.toLowerCase();
       if (!this.titleToPathIndex.has(titleKey)) {
         this.titleToPathIndex.set(titleKey, new Set());
       }
       this.titleToPathIndex.get(titleKey).add(filePath);
+
+      const normTitle = titleKey.replace(/[\s\-_]/g, '');
+      if (!this.normalizedTitleIndex.has(normTitle)) {
+        this.normalizedTitleIndex.set(normTitle, new Set());
+      }
+      this.normalizedTitleIndex.get(normTitle).add(filePath);
     } else if (primaryHeading) {
       const h1Key = primaryHeading.toLowerCase();
       if (!this.titleToPathIndex.has(h1Key)) {
         this.titleToPathIndex.set(h1Key, new Set());
       }
       this.titleToPathIndex.get(h1Key).add(filePath);
+
+      const normH1 = h1Key.replace(/[\s\-_]/g, '');
+      if (!this.normalizedTitleIndex.has(normH1)) {
+        this.normalizedTitleIndex.set(normH1, new Set());
+      }
+      this.normalizedTitleIndex.get(normH1).add(filePath);
     }
   }
 
@@ -741,6 +816,16 @@ class WorkspaceNotesIndexer {
       const targetPath = this.resolveNotePath(link.targetNote, filePath);
       if (targetPath) {
         meta.resolvedLinks.push({ link, targetPath });
+      }
+    }
+
+    meta.resolvedMediaLinks = [];
+    if (meta.mediaLinks) {
+      for (const targetMedia of meta.mediaLinks) {
+        const mediaPath = this.resolveMediaPath(targetMedia, filePath);
+        if (mediaPath) {
+          meta.resolvedMediaLinks.push(mediaPath);
+        }
       }
     }
   }
@@ -797,12 +882,26 @@ class WorkspaceNotesIndexer {
       if (baseSet.size === 0) this.titleToPathIndex.delete(baseKey);
     }
 
+    const normBase = baseKey.replace(/[\s\-_]/g, '');
+    const normBaseSet = this.normalizedTitleIndex.get(normBase);
+    if (normBaseSet) {
+      normBaseSet.delete(filePath);
+      if (normBaseSet.size === 0) this.normalizedTitleIndex.delete(normBase);
+    }
+
     if (existing.frontmatterTitle) {
       const titleKey = existing.frontmatterTitle.toLowerCase();
       const titleSet = this.titleToPathIndex.get(titleKey);
       if (titleSet) {
         titleSet.delete(filePath);
         if (titleSet.size === 0) this.titleToPathIndex.delete(titleKey);
+      }
+
+      const normTitle = titleKey.replace(/[\s\-_]/g, '');
+      const normTitleSet = this.normalizedTitleIndex.get(normTitle);
+      if (normTitleSet) {
+        normTitleSet.delete(filePath);
+        if (normTitleSet.size === 0) this.normalizedTitleIndex.delete(normTitle);
       }
     }
   }
@@ -835,12 +934,19 @@ class WorkspaceNotesIndexer {
       return exactMatches.values().next().value;
     }
 
-    // 2. Normalized match ignoring spaces, dashes, and underscores
+    // 2. Normalized match ignoring spaces, dashes, and underscores (O(1) Map lookup)
     const normalizedTarget = key.replace(/[\s\-_]/g, '');
-    for (const [indexedKey, paths] of this.titleToPathIndex.entries()) {
-      if (indexedKey.replace(/[\s\-_]/g, '') === normalizedTarget && paths.size > 0) {
-        return paths.values().next().value;
+    const normMatches = this.normalizedTitleIndex.get(normalizedTarget);
+    if (normMatches && normMatches.size > 0) {
+      if (sourceFilePath) {
+        const sourceDir = path.dirname(sourceFilePath);
+        for (const candidate of normMatches) {
+          if (path.dirname(candidate) === sourceDir) {
+            return candidate;
+          }
+        }
       }
+      return normMatches.values().next().value;
     }
 
     // 3. Fallback: filesystem check for notes not yet in the index
@@ -993,11 +1099,12 @@ class WorkspaceNotesIndexer {
     const rawNodes = new Map();
     const rawLinks = [];
 
-    // First pass: collect all notes as potential nodes
+    // 1. Collect all notes as potential nodes
     for (const [filePath, meta] of this.fileIndex.entries()) {
       rawNodes.set(filePath, {
         id: filePath,
         label: meta.title || meta.baseName,
+        type: 'note',
         baseName: meta.baseName,
         relativePath: meta.relativePath,
         filePath,
@@ -1009,33 +1116,94 @@ class WorkspaceNotesIndexer {
       });
     }
 
-    // Second pass: use pre-resolved link targets (no filesystem I/O)
+    // 2. Collect Tag nodes & links
+    const excludedTags = this.getExcludedTags();
+    for (const [tag, files] of this.tagIndex.entries()) {
+      if (excludedTags.has(tag.toLowerCase())) continue;
+      const tagId = 'tag:' + tag;
+      rawNodes.set(tagId, {
+        id: tagId,
+        label: '#' + tag,
+        type: 'tag',
+        tag,
+        tags: [tag],
+        categories: [],
+        inDegree: 0,
+        outDegree: 0,
+        isCurrent: false
+      });
+      for (const filePath of files) {
+        if (rawNodes.has(filePath)) {
+          rawLinks.push({
+            source: filePath,
+            target: tagId,
+            type: 'tag',
+            label: '#' + tag
+          });
+        }
+      }
+    }
+
+    // 3. Collect Attachment nodes & links
+    for (const [sourcePath, meta] of this.fileIndex.entries()) {
+      if (meta.resolvedMediaLinks) {
+        for (const mediaPath of meta.resolvedMediaLinks) {
+          if (!rawNodes.has(mediaPath)) {
+            rawNodes.set(mediaPath, {
+              id: mediaPath,
+              label: path.basename(mediaPath),
+              type: 'attachment',
+              filePath: mediaPath,
+              isMedia: true,
+              tags: [],
+              categories: [],
+              inDegree: 0,
+              outDegree: 0,
+              isCurrent: false
+            });
+          }
+          rawLinks.push({
+            source: sourcePath,
+            target: mediaPath,
+            type: 'attachment',
+            label: ''
+          });
+        }
+      }
+    }
+
+    // 4. Build Note-to-Note Links and adjacency map
     const adjacency = new Map();
-    for (const filePath of rawNodes.keys()) {
-      adjacency.set(filePath, new Set());
+    for (const id of rawNodes.keys()) {
+      adjacency.set(id, new Set());
     }
 
     for (const [sourcePath, meta] of this.fileIndex.entries()) {
-      const sourceNode = rawNodes.get(sourcePath);
-      if (!sourceNode) continue;
-
       const resolvedLinks = meta.resolvedLinks || [];
       for (const { link, targetPath } of resolvedLinks) {
         if (rawNodes.has(targetPath) && targetPath !== sourcePath) {
-          const targetNode = rawNodes.get(targetPath);
-          sourceNode.outDegree++;
-          targetNode.inDegree++;
-
           rawLinks.push({
             source: sourcePath,
             target: targetPath,
+            type: 'note',
             label: link.alias || link.heading || ''
           });
-
-          adjacency.get(sourcePath).add(targetPath);
-          adjacency.get(targetPath).add(sourcePath);
         }
       }
+    }
+
+    // Add adjacency and degree counts for all links (notes, tags, attachments)
+    for (const link of rawLinks) {
+      const s = typeof link.source === 'string' ? link.source : link.source.id;
+      const t = typeof link.target === 'string' ? link.target : link.target.id;
+      if (adjacency.has(s) && adjacency.has(t)) {
+        adjacency.get(s).add(t);
+        adjacency.get(t).add(s);
+      }
+      const sNode = rawNodes.get(s);
+      const tNode = rawNodes.get(t);
+      if (sNode) sNode.outDegree++;
+      if (tNode) tNode.inDegree++;
     }
 
     // Local Graph filtering if activeFilePath and maxDepth > 0
@@ -1102,11 +1270,15 @@ class WorkspaceNotesIndexer {
       if (matchingResolved.length === 0) continue;
 
       let fileLines = null;
-      try {
-        const content = await fs.promises.readFile(sourcePath, 'utf8');
-        fileLines = content.split(/\r?\n/);
-      } catch {
-        fileLines = meta._content ? meta._content.split(/\r?\n/) : [];
+      if (meta._content) {
+        fileLines = meta._content.split(/\r?\n/);
+      } else {
+        try {
+          const content = await fs.promises.readFile(sourcePath, 'utf8');
+          fileLines = content.split(/\r?\n/);
+        } catch {
+          fileLines = [];
+        }
       }
 
       const snippets = [];
@@ -1168,13 +1340,11 @@ class WorkspaceNotesIndexer {
     for (const [sourcePath, meta] of this.fileIndex.entries()) {
       if (sourcePath === targetFilePath) continue;
 
-      let content;
-      try {
-        content = await fs.promises.readFile(sourcePath, 'utf8');
-      } catch {
-        if (meta._content) {
-          content = meta._content;
-        } else {
+      let content = meta._content;
+      if (!content) {
+        try {
+          content = await fs.promises.readFile(sourcePath, 'utf8');
+        } catch {
           continue;
         }
       }
@@ -1257,6 +1427,7 @@ class WorkspaceNotesIndexer {
     this.tagIndex.clear();
     this.categoryIndex.clear();
     this.titleToPathIndex.clear();
+    this.normalizedTitleIndex.clear();
     this.propertyKeyIndex.clear();
     this.propertyValueIndex.clear();
     this._cachedTags = null;

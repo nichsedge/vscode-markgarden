@@ -117,6 +117,18 @@ class GraphViewManager {
           this.sendGraphData();
           break;
         }
+        case 'saveSettings': {
+          if (message.settings && this.context && this.context.workspaceState) {
+            this.context.workspaceState.update('obsidianGraphSettings', message.settings);
+          }
+          break;
+        }
+        case 'resetSettings': {
+          if (this.context && this.context.workspaceState) {
+            this.context.workspaceState.update('obsidianGraphSettings', undefined);
+          }
+          break;
+        }
       }
     });
 
@@ -148,6 +160,10 @@ class GraphViewManager {
       this._indexDirty = false;
     }
 
+    const savedSettings = (this.context && this.context.workspaceState)
+      ? this.context.workspaceState.get('obsidianGraphSettings') || null
+      : null;
+
     this.panel.webview.postMessage({
       command: 'updateGraph',
       data,
@@ -156,7 +172,8 @@ class GraphViewManager {
       activeNoteTitle: this.activeFilePath ? path.basename(this.activeFilePath, '.md') : '',
       allTags: this._cachedTagList,
       allCategories: this._cachedCategoryList,
-      excludedTags: Array.from(this.indexer.getExcludedTags())
+      excludedTags: Array.from(this.indexer.getExcludedTags()),
+      savedSettings
     });
   }
 
@@ -618,6 +635,30 @@ class GraphViewManager {
       </div>
 
       <div class="toggle-row">
+        <span>Show Tags</span>
+        <label class="switch">
+          <input type="checkbox" id="toggle-tags">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="toggle-row">
+        <span>Show Attachments</span>
+        <label class="switch">
+          <input type="checkbox" id="toggle-attachments">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="toggle-row">
+        <span>Show Orphans</span>
+        <label class="switch">
+          <input type="checkbox" id="toggle-orphans" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="toggle-row">
         <span>Local Graph</span>
         <label class="switch">
           <input type="checkbox" id="toggle-local">
@@ -633,16 +674,8 @@ class GraphViewManager {
         <input type="range" id="range-depth" min="1" max="4" value="1" />
       </div>
 
-      <div class="toggle-row">
-        <span>Show Orphans</span>
-        <label class="switch">
-          <input type="checkbox" id="toggle-orphans" checked>
-          <span class="slider"></span>
-        </label>
-      </div>
-
       <div class="accordion-header" id="forces-header">
-        <span>Physics Forces</span>
+        <span>Forces</span>
         <svg id="forces-arrow" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="6 9 12 15 18 9"/>
         </svg>
@@ -651,32 +684,41 @@ class GraphViewManager {
       <div class="accordion-content collapsed" id="forces-content">
         <div class="range-row">
           <div class="range-header">
-            <span>Repulsion Force</span>
-            <span id="repulsion-val">100%</span>
+            <span>Center force</span>
+            <span id="center-force-val">100%</span>
           </div>
-          <input type="range" id="range-repulsion" min="20" max="300" value="100" />
+          <input type="range" id="range-center-force" min="0" max="300" value="100" />
         </div>
 
         <div class="range-row">
           <div class="range-header">
-            <span>Center Gravity</span>
-            <span id="gravity-val">100%</span>
+            <span>Repel force</span>
+            <span id="repel-force-val">100%</span>
           </div>
-          <input type="range" id="range-gravity" min="0" max="300" value="100" />
+          <input type="range" id="range-repel-force" min="20" max="300" value="100" />
         </div>
 
         <div class="range-row">
           <div class="range-header">
-            <span>Link Distance</span>
+            <span>Link force</span>
+            <span id="link-force-val">100%</span>
+          </div>
+          <input type="range" id="range-link-force" min="10" max="300" value="100" />
+        </div>
+
+        <div class="range-row">
+          <div class="range-header">
+            <span>Link distance</span>
             <span id="link-dist-val">70px</span>
           </div>
-          <input type="range" id="range-link-dist" min="20" max="200" value="70" />
+          <input type="range" id="range-link-dist" min="20" max="250" value="70" />
         </div>
       </div>
 
       <div class="btn-row">
-        <button class="btn-action" id="btn-reset-view">Fit View</button>
+        <button class="btn-action" id="btn-reset-view" title="Fit graph to view">Fit View</button>
         <button class="btn-action" id="btn-toggle-physics">Pause</button>
+        <button class="btn-action" id="btn-reset-filters" title="Reset all filters and physics forces to defaults">Reset</button>
       </div>
 
       <div class="stats-badge" id="stats-badge">0 notes • 0 links</div>
@@ -702,22 +744,27 @@ class GraphViewManager {
     const tagFilter = document.getElementById('tag-filter');
     const tagExcludeFilter = document.getElementById('tag-exclude-filter');
     const labelModeSelect = document.getElementById('label-mode');
+    const toggleTags = document.getElementById('toggle-tags');
+    const toggleAttachments = document.getElementById('toggle-attachments');
+    const toggleOrphans = document.getElementById('toggle-orphans');
     const toggleLocal = document.getElementById('toggle-local');
     const localDepthContainer = document.getElementById('local-depth-container');
     const rangeDepth = document.getElementById('range-depth');
     const depthVal = document.getElementById('depth-val');
-    const toggleOrphans = document.getElementById('toggle-orphans');
     const forcesHeader = document.getElementById('forces-header');
     const forcesContent = document.getElementById('forces-content');
     const forcesArrow = document.getElementById('forces-arrow');
-    const rangeRepulsion = document.getElementById('range-repulsion');
-    const repulsionVal = document.getElementById('repulsion-val');
-    const rangeGravity = document.getElementById('range-gravity');
-    const gravityVal = document.getElementById('gravity-val');
+    const rangeCenterForce = document.getElementById('range-center-force');
+    const centerForceVal = document.getElementById('center-force-val');
+    const rangeRepelForce = document.getElementById('range-repel-force');
+    const repelForceVal = document.getElementById('repel-force-val');
+    const rangeLinkForce = document.getElementById('range-link-force');
+    const linkForceVal = document.getElementById('link-force-val');
     const rangeLinkDist = document.getElementById('range-link-dist');
     const linkDistVal = document.getElementById('link-dist-val');
     const btnResetView = document.getElementById('btn-reset-view');
     const btnTogglePhysics = document.getElementById('btn-toggle-physics');
+    const btnResetFilters = document.getElementById('btn-reset-filters');
     const btnTogglePanel = document.getElementById('btn-toggle-panel');
     const controlsPanel = document.getElementById('controls-panel');
     const statsBadge = document.getElementById('stats-badge');
@@ -735,17 +782,23 @@ class GraphViewManager {
 
     let isLocalMode = false;
     let localDepth = 1;
+    let showTags = false;
+    let showAttachments = false;
     let showOrphans = true;
     let labelMode = 'smart'; // 'smart' | 'hover' | 'always'
     let searchQuery = '';
+    let parsedSearch = null;
     let selectedTag = '';
     let selectedExcludeTag = '';
     let configExcludedTags = [];
     let physicsRunning = true;
+    let hasRestoredInitialSettings = false;
+    let lastRenderedTagsKey = '';
 
     // Physics multipliers
-    let repulsionMultiplier = 1.0;
-    let gravityMultiplier = 1.0;
+    let centerForceMultiplier = 1.0;
+    let repelForceMultiplier = 1.0;
+    let linkForceMultiplier = 1.0;
     let userLinkDistance = 70;
 
     // View Transformation (Pan & Zoom)
@@ -764,6 +817,153 @@ class GraphViewManager {
 
     // Reusable Set for highlight detection
     const highlightedNodeIds = new Set();
+
+    // --- State Persistence & Reset Logic ---
+    function getCurrentState() {
+      return {
+        searchQuery,
+        selectedTag,
+        selectedExcludeTag,
+        labelMode,
+        showTags,
+        showAttachments,
+        showOrphans,
+        centerForceMultiplier,
+        repelForceMultiplier,
+        linkForceMultiplier,
+        userLinkDistance
+      };
+    }
+
+    function saveState() {
+      const state = getCurrentState();
+      try {
+        vscode.setState(state);
+        vscode.postMessage({
+          command: 'saveSettings',
+          settings: state
+        });
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    function restoreState(saved) {
+      if (!saved) return;
+      if (typeof saved.searchQuery === 'string') {
+        searchQuery = saved.searchQuery;
+        searchInput.value = searchQuery;
+        parsedSearch = parseSearchQuery(searchQuery);
+      }
+      if (typeof saved.selectedTag === 'string') {
+        selectedTag = saved.selectedTag;
+        tagFilter.value = selectedTag;
+      }
+      if (typeof saved.selectedExcludeTag === 'string') {
+        selectedExcludeTag = saved.selectedExcludeTag;
+        tagExcludeFilter.value = selectedExcludeTag;
+      }
+      if (typeof saved.labelMode === 'string') {
+        labelMode = saved.labelMode;
+        labelModeSelect.value = labelMode;
+      }
+      if (typeof saved.showTags === 'boolean') {
+        showTags = saved.showTags;
+        toggleTags.checked = showTags;
+      }
+      if (typeof saved.showAttachments === 'boolean') {
+        showAttachments = saved.showAttachments;
+        toggleAttachments.checked = showAttachments;
+      }
+      if (typeof saved.showOrphans === 'boolean') {
+        showOrphans = saved.showOrphans;
+        toggleOrphans.checked = showOrphans;
+      }
+      if (typeof saved.centerForceMultiplier === 'number') {
+        centerForceMultiplier = saved.centerForceMultiplier;
+        const val = Math.round(centerForceMultiplier * 100);
+        rangeCenterForce.value = val;
+        centerForceVal.textContent = val + '%';
+      }
+      if (typeof saved.repelForceMultiplier === 'number') {
+        repelForceMultiplier = saved.repelForceMultiplier;
+        const val = Math.round(repelForceMultiplier * 100);
+        rangeRepelForce.value = val;
+        repelForceVal.textContent = val + '%';
+      }
+      if (typeof saved.linkForceMultiplier === 'number') {
+        linkForceMultiplier = saved.linkForceMultiplier;
+        const val = Math.round(linkForceMultiplier * 100);
+        rangeLinkForce.value = val;
+        linkForceVal.textContent = val + '%';
+      }
+      if (typeof saved.userLinkDistance === 'number') {
+        userLinkDistance = saved.userLinkDistance;
+        rangeLinkDist.value = userLinkDistance;
+        linkDistVal.textContent = userLinkDistance + 'px';
+      }
+    }
+
+    function resetFilters() {
+      searchQuery = '';
+      searchInput.value = '';
+      parsedSearch = null;
+
+      selectedTag = '';
+      tagFilter.value = '';
+
+      selectedExcludeTag = '';
+      tagExcludeFilter.value = '';
+
+      labelMode = 'smart';
+      labelModeSelect.value = 'smart';
+
+      showTags = false;
+      toggleTags.checked = false;
+
+      showAttachments = false;
+      toggleAttachments.checked = false;
+
+      showOrphans = true;
+      toggleOrphans.checked = true;
+
+      centerForceMultiplier = 1.0;
+      rangeCenterForce.value = 100;
+      centerForceVal.textContent = '100%';
+
+      repelForceMultiplier = 1.0;
+      rangeRepelForce.value = 100;
+      repelForceVal.textContent = '100%';
+
+      linkForceMultiplier = 1.0;
+      rangeLinkForce.value = 100;
+      linkForceVal.textContent = '100%';
+
+      userLinkDistance = 70;
+      rangeLinkDist.value = 70;
+      linkDistVal.textContent = '70px';
+
+      saveState();
+      try {
+        vscode.postMessage({ command: 'resetSettings' });
+      } catch (e) {
+        // ignore
+      }
+
+      applyFilters();
+      fitView();
+    }
+
+    // Try immediate restore from Webview session state
+    try {
+      const initialSaved = vscode.getState();
+      if (initialSaved) {
+        restoreState(initialSaved);
+        hasRestoredInitialSettings = true;
+      }
+    } catch (e) {
+      // ignore
+    }
 
     // Tag Color Palette Generator
     const tagColors = [
@@ -832,9 +1032,9 @@ class GraphViewManager {
     function doesNodeMatchSearch(node, parsedSearch) {
       if (!parsedSearch || parsedSearch.isEmpty) return true;
 
-      const nodeTags = (node.tags || []).map(t => t.toLowerCase());
-      const labelLower = (node.label || '').toLowerCase();
-      const pathLower = (node.relativePath || node.filePath || '').toLowerCase();
+      const nodeTags = node.tagsLower || (node.tagsLower = (node.tags || []).map(t => t.toLowerCase()));
+      const labelLower = node.labelLower || (node.labelLower = (node.label || '').toLowerCase());
+      const pathLower = node.pathLower || (node.pathLower = (node.relativePath || node.filePath || '').toLowerCase());
 
       // Negative tag exclusions
       for (const negTag of parsedSearch.negativeTags) {
@@ -943,18 +1143,19 @@ class GraphViewManager {
       const cx = width / 2;
       const cy = height / 2;
 
-      // Adaptive center gravity — very gentle for large vaults so nodes spread out into natural clusters
+      // Center force (adaptive center gravity)
       const centerGravity = (nodes.length > 500
         ? Math.max(0.0003, 0.003 / Math.sqrt(nodes.length))
-        : 0.0035) * gravityMultiplier;
+        : 0.0035) * centerForceMultiplier;
 
-      // Adaptive Coulomb repulsion
+      // Repel force (Coulomb repulsion)
       const baseRepulsion = (nodes.length > 500
         ? Math.max(350, 2200 / Math.sqrt(nodes.length / 50))
-        : 1400) * repulsionMultiplier;
+        : 1400) * repelForceMultiplier;
 
+      // Link force and Link distance
+      const linkStrength = 0.045 * linkForceMultiplier;
       const linkDistance = userLinkDistance;
-      const linkStrength = 0.045;
       const damping = 0.88;
 
       // 1. Center gravity force
@@ -967,30 +1168,121 @@ class GraphViewManager {
         }
       }
 
-      // 2. Coulomb Repulsion between nodes (distance-capped for 60fps performance)
+      // 2. Coulomb Repulsion between nodes (spatial hash for large graphs)
       const maxDistanceSq = nodes.length > 500 ? 160000 : 640000;
-      for (let i = 0; i < nodes.length; i++) {
-        const n1 = nodes[i];
-        for (let j = i + 1; j < nodes.length; j++) {
-          const n2 = nodes[j];
-          const dx = n2.x - n1.x;
-          const dy = n2.y - n1.y;
-          const distSq = dx * dx + dy * dy + 150;
-          if (distSq > maxDistanceSq) continue;
+      if (nodes.length <= 80) {
+        for (let i = 0; i < nodes.length; i++) {
+          const n1 = nodes[i];
+          for (let j = i + 1; j < nodes.length; j++) {
+            const n2 = nodes[j];
+            const dx = n2.x - n1.x;
+            const dy = n2.y - n1.y;
+            const distSq = dx * dx + dy * dy + 150;
+            if (distSq > maxDistanceSq) continue;
 
-          const dist = Math.sqrt(distSq);
-          const force = baseRepulsion / distSq;
+            const dist = Math.sqrt(distSq);
+            const force = baseRepulsion / distSq;
 
-          const fx = (dx / dist) * force;
-          const fy = (dy / dist) * force;
+            const fx = (dx / dist) * force;
+            const fy = (dy / dist) * force;
 
-          if (n1 !== draggedNode) {
-            n1.vx -= fx;
-            n1.vy -= fy;
+            if (n1 !== draggedNode) {
+              n1.vx -= fx;
+              n1.vy -= fy;
+            }
+            if (n2 !== draggedNode) {
+              n2.vx += fx;
+              n2.vy += fy;
+            }
           }
-          if (n2 !== draggedNode) {
-            n2.vx += fx;
-            n2.vy += fy;
+        }
+      } else {
+        const cellSize = Math.sqrt(maxDistanceSq);
+        const invCellSize = 1 / cellSize;
+        const grid = new Map();
+
+        for (let i = 0; i < nodes.length; i++) {
+          const node = nodes[i];
+          const gx = Math.floor(node.x * invCellSize);
+          const gy = Math.floor(node.y * invCellSize);
+          const key = (gx << 16) ^ (gy & 0xffff);
+          let bucket = grid.get(key);
+          if (!bucket) {
+            bucket = [];
+            grid.set(key, bucket);
+          }
+          bucket.push(node);
+          node._gx = gx;
+          node._gy = gy;
+        }
+
+        const neighborOffsets = [
+          [0, 0], [1, 0], [-1, 1], [0, 1], [1, 1]
+        ];
+
+        for (const [key, cellNodes] of grid.entries()) {
+          const firstNode = cellNodes[0];
+          const gx = firstNode._gx;
+          const gy = firstNode._gy;
+
+          // 1. Within cell pairs
+          for (let i = 0; i < cellNodes.length; i++) {
+            const n1 = cellNodes[i];
+            for (let j = i + 1; j < cellNodes.length; j++) {
+              const n2 = cellNodes[j];
+              const dx = n2.x - n1.x;
+              const dy = n2.y - n1.y;
+              const distSq = dx * dx + dy * dy + 150;
+              if (distSq > maxDistanceSq) continue;
+
+              const dist = Math.sqrt(distSq);
+              const force = baseRepulsion / distSq;
+              const fx = (dx / dist) * force;
+              const fy = (dy / dist) * force;
+
+              if (n1 !== draggedNode) {
+                n1.vx -= fx;
+                n1.vy -= fy;
+              }
+              if (n2 !== draggedNode) {
+                n2.vx += fx;
+                n2.vy += fy;
+              }
+            }
+          }
+
+          // 2. Neighboring cells (half neighborhood to test each cell pair once)
+          for (let o = 1; o < neighborOffsets.length; o++) {
+            const ngx = gx + neighborOffsets[o][0];
+            const ngy = gy + neighborOffsets[o][1];
+            const nKey = (ngx << 16) ^ (ngy & 0xffff);
+            const neighborCell = grid.get(nKey);
+            if (!neighborCell) continue;
+
+            for (let i = 0; i < cellNodes.length; i++) {
+              const n1 = cellNodes[i];
+              for (let j = 0; j < neighborCell.length; j++) {
+                const n2 = neighborCell[j];
+                const dx = n2.x - n1.x;
+                const dy = n2.y - n1.y;
+                const distSq = dx * dx + dy * dy + 150;
+                if (distSq > maxDistanceSq) continue;
+
+                const dist = Math.sqrt(distSq);
+                const force = baseRepulsion / distSq;
+                const fx = (dx / dist) * force;
+                const fy = (dy / dist) * force;
+
+                if (n1 !== draggedNode) {
+                  n1.vx -= fx;
+                  n1.vy -= fy;
+                }
+                if (n2 !== draggedNode) {
+                  n2.vx += fx;
+                  n2.vy += fy;
+                }
+              }
+            }
           }
         }
       }
@@ -1103,14 +1395,17 @@ class GraphViewManager {
           ctx.strokeStyle = 'rgba(180, 190, 254, 0.04)';
           ctx.lineWidth = Math.max(minLineWidth * 0.8, 0.7 / transform.scale);
         } else {
-          ctx.strokeStyle = 'rgba(180, 190, 254, 0.22)';
+          ctx.strokeStyle = link.type === 'tag'
+            ? 'rgba(250, 179, 135, 0.25)'
+            : link.type === 'attachment'
+              ? 'rgba(137, 220, 235, 0.25)'
+              : 'rgba(180, 190, 254, 0.22)';
           ctx.lineWidth = Math.max(minLineWidth, 1 / transform.scale);
         }
 
         ctx.stroke();
       }
 
-      const parsedSearch = parseSearchQuery(searchQuery);
       const minScreenRadius = 2.5;
       const minWorldRadius = minScreenRadius / transform.scale;
 
@@ -1122,7 +1417,13 @@ class GraphViewManager {
         const matchesSearch = doesNodeMatchSearch(node, parsedSearch);
         const isDimmed = (hoveredNode && !isConnected) || (!matchesSearch);
 
-        const nodeColor = node.isCurrent ? '#f9e2af' : getTagColor(node.tags);
+        let nodeColor = node.isCurrent ? '#f9e2af' : getTagColor(node.tags);
+        if (node.type === 'tag') {
+          nodeColor = '#fab387'; // Peach for tags
+        } else if (node.type === 'attachment') {
+          nodeColor = '#89dceb'; // Cyan for media
+        }
+
         const baseRadius = Math.max(node.radius || 3.5, minWorldRadius);
         const radius = isHovered ? baseRadius * 1.35 : baseRadius;
 
@@ -1374,14 +1675,23 @@ class GraphViewManager {
     // --- Tooltip Management ---
     function showTooltip(node, clientX, clientY) {
       ttTitle.textContent = node.label;
-      ttPath.textContent = node.relativePath || '';
+      ttPath.textContent = node.relativePath || node.filePath || '';
 
-      let metaHtml = '<div>Links: <strong>' + (node.linkCount || 0) + '</strong> (' + (node.inDegree || 0) + ' in, ' + (node.outDegree || 0) + ' out)</div>';
-      if (node.tags && node.tags.length > 0) {
-        metaHtml += '<div>Tags: ' + node.tags.map(t => '<span class="tag-pill">#' + t + '</span>').join('') + '</div>';
-      }
-      if (node.categories && node.categories.length > 0) {
-        metaHtml += '<div>Categories: ' + node.categories.join(', ') + '</div>';
+      let metaHtml = '';
+      if (node.type === 'tag') {
+        metaHtml += '<div>Type: <strong>Tag</strong></div>';
+        metaHtml += '<div>Tagged Notes: <strong>' + (node.linkCount || 0) + '</strong></div>';
+      } else if (node.type === 'attachment') {
+        metaHtml += '<div>Type: <strong>Attachment</strong></div>';
+        metaHtml += '<div>Referenced in: <strong>' + (node.linkCount || 0) + ' notes</strong></div>';
+      } else {
+        metaHtml += '<div>Links: <strong>' + (node.linkCount || 0) + '</strong> (' + (node.inDegree || 0) + ' in, ' + (node.outDegree || 0) + ' out)</div>';
+        if (node.tags && node.tags.length > 0) {
+          metaHtml += '<div>Tags: ' + node.tags.map(t => '<span class="tag-pill">#' + t + '</span>').join('') + '</div>';
+        }
+        if (node.categories && node.categories.length > 0) {
+          metaHtml += '<div>Categories: ' + node.categories.join(', ') + '</div>';
+        }
       }
       ttMeta.innerHTML = metaHtml;
 
@@ -1413,37 +1723,65 @@ class GraphViewManager {
     function applyFilters() {
       const oldNodeMap = new Map(nodeMap);
       nodeMap.clear();
-      let filtered = rawNodes;
 
-      // 1. Filter out workspace configured excludedTags
-      if (configExcludedTags && configExcludedTags.length > 0) {
-        const exclSet = new Set(configExcludedTags.map(t => t.toLowerCase()));
-        filtered = filtered.filter(n => {
-          if (!n.tags || n.tags.length === 0) return true;
-          return !n.tags.some(t => exclSet.has(t.toLowerCase()));
-        });
+      const exclSet = (configExcludedTags && configExcludedTags.length > 0)
+        ? new Set(configExcludedTags.map(t => t.toLowerCase()))
+        : null;
+      const exclTag = selectedExcludeTag ? selectedExcludeTag.toLowerCase() : null;
+      const inclTag = selectedTag ? selectedTag.toLowerCase() : null;
+
+      // 1. Initial filter by type and tags
+      const candidates = rawNodes.filter(n => {
+        if (!showTags && n.type === 'tag') return false;
+        if (!showAttachments && n.type === 'attachment') return false;
+
+        const tagsLower = n.tagsLower || (n.tagsLower = (n.tags || []).map(t => t.toLowerCase()));
+
+        if (exclSet && tagsLower.length > 0 && tagsLower.some(t => exclSet.has(t))) {
+          return false;
+        }
+        if (exclTag && tagsLower.includes(exclTag)) {
+          return false;
+        }
+        if (inclTag && !tagsLower.includes(inclTag)) {
+          return false;
+        }
+        return true;
+      });
+
+      const candidateMap = new Map();
+      for (let i = 0; i < candidates.length; i++) {
+        candidateMap.set(candidates[i].id, candidates[i]);
       }
 
-      // 2. Filter out UI excluded tag
-      if (selectedExcludeTag) {
-        const excl = selectedExcludeTag.toLowerCase();
-        filtered = filtered.filter(n => !n.tags || !n.tags.map(t => t.toLowerCase()).includes(excl));
+      // 2. Determine active links among candidates and compute active degrees
+      const activeDegrees = new Map();
+      const activeLinks = [];
+
+      for (let i = 0; i < rawLinks.length; i++) {
+        const l = rawLinks[i];
+        if (!showTags && l.type === 'tag') continue;
+        if (!showAttachments && l.type === 'attachment') continue;
+
+        const sId = typeof l.source === 'object' ? l.source.id : l.source;
+        const tId = typeof l.target === 'object' ? l.target.id : l.target;
+
+        if (candidateMap.has(sId) && candidateMap.has(tId)) {
+          activeLinks.push(l);
+          activeDegrees.set(sId, (activeDegrees.get(sId) || 0) + 1);
+          activeDegrees.set(tId, (activeDegrees.get(tId) || 0) + 1);
+        }
       }
 
-      // 3. Filter by UI included tag
-      if (selectedTag) {
-        const incl = selectedTag.toLowerCase();
-        filtered = filtered.filter(n => n.tags && n.tags.map(t => t.toLowerCase()).includes(incl));
-      }
+      // 3. Filter orphans based on active degree in current graph
+      const finalNodes = showOrphans
+        ? candidates
+        : candidates.filter(n => (activeDegrees.get(n.id) || 0) > 0 || n.isCurrent);
 
-      // 4. Filter orphans
-      if (!showOrphans) {
-        filtered = filtered.filter(n => (n.linkCount || 0) > 0 || n.isCurrent);
-      }
-
-      nodes = filtered;
+      nodes = finalNodes;
       for (let i = 0; i < nodes.length; i++) {
         const n = nodes[i];
+        n.activeLinkCount = activeDegrees.get(n.id) || 0;
         const prev = oldNodeMap.get(n.id);
         if (prev && prev.x !== undefined && prev.y !== undefined) {
           n.x = prev.x;
@@ -1454,7 +1792,7 @@ class GraphViewManager {
         nodeMap.set(n.id, n);
       }
 
-      links = rawLinks.filter(l => {
+      links = activeLinks.filter(l => {
         const sId = typeof l.source === 'object' ? l.source.id : l.source;
         const tId = typeof l.target === 'object' ? l.target.id : l.target;
         return nodeMap.has(sId) && nodeMap.has(tId);
@@ -1494,26 +1832,44 @@ class GraphViewManager {
     // --- Event Listeners for Controls ---
     searchInput.addEventListener('input', e => {
       searchQuery = e.target.value.trim();
+      parsedSearch = parseSearchQuery(searchQuery);
+      saveState();
       requestRender();
     });
 
     tagFilter.addEventListener('change', e => {
       selectedTag = e.target.value;
+      saveState();
       applyFilters();
     });
 
     tagExcludeFilter.addEventListener('change', e => {
       selectedExcludeTag = e.target.value;
+      saveState();
       applyFilters();
     });
 
     labelModeSelect.addEventListener('change', e => {
       labelMode = e.target.value;
+      saveState();
       requestRender();
+    });
+
+    toggleTags.addEventListener('change', e => {
+      showTags = e.target.checked;
+      saveState();
+      applyFilters();
+    });
+
+    toggleAttachments.addEventListener('change', e => {
+      showAttachments = e.target.checked;
+      saveState();
+      applyFilters();
     });
 
     toggleOrphans.addEventListener('change', e => {
       showOrphans = e.target.checked;
+      saveState();
       applyFilters();
     });
 
@@ -1546,23 +1902,34 @@ class GraphViewManager {
         : '<polyline points="18 15 12 9 6 15"/>';
     });
 
-    rangeRepulsion.addEventListener('input', e => {
+    rangeCenterForce.addEventListener('input', e => {
       const val = parseInt(e.target.value, 10);
-      repulsionMultiplier = val / 100;
-      repulsionVal.textContent = val + '%';
+      centerForceMultiplier = val / 100;
+      centerForceVal.textContent = val + '%';
+      saveState();
       requestRender();
     });
 
-    rangeGravity.addEventListener('input', e => {
+    rangeRepelForce.addEventListener('input', e => {
       const val = parseInt(e.target.value, 10);
-      gravityMultiplier = val / 100;
-      gravityVal.textContent = val + '%';
+      repelForceMultiplier = val / 100;
+      repelForceVal.textContent = val + '%';
+      saveState();
+      requestRender();
+    });
+
+    rangeLinkForce.addEventListener('input', e => {
+      const val = parseInt(e.target.value, 10);
+      linkForceMultiplier = val / 100;
+      linkForceVal.textContent = val + '%';
+      saveState();
       requestRender();
     });
 
     rangeLinkDist.addEventListener('input', e => {
       userLinkDistance = parseInt(e.target.value, 10);
       linkDistVal.textContent = userLinkDistance + 'px';
+      saveState();
       requestRender();
     });
 
@@ -1576,11 +1943,13 @@ class GraphViewManager {
       }
     });
 
+    btnResetFilters.addEventListener('click', resetFilters);
+
     btnTogglePanel.addEventListener('click', () => {
       controlsPanel.classList.toggle('collapsed');
       btnTogglePanel.innerHTML = controlsPanel.classList.contains('collapsed')
         ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>'
-        : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/>';
+        : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>';
     });
 
     // --- Message Receiver from Extension Host ---
@@ -1603,28 +1972,41 @@ class GraphViewManager {
           depthVal.textContent = localDepth;
         }
 
-        // Populate Tag Filter & Exclude Dropdowns
-        const currentTag = tagFilter.value;
-        const currentExcludeTag = tagExcludeFilter.value;
+        // Restore saved workspace settings on first load if not restored from webview state
+        if (!hasRestoredInitialSettings && message.savedSettings) {
+          restoreState(message.savedSettings);
+          hasRestoredInitialSettings = true;
+        }
 
-        tagFilter.innerHTML = '<option value="">Filter by Tag: All</option>';
-        tagExcludeFilter.innerHTML = '<option value="">Exclude Tag: None</option>';
+        // Populate Tag Filter & Exclude Dropdowns (diff to avoid DOM thrash)
+        const currentTag = tagFilter.value || selectedTag;
+        const currentExcludeTag = tagExcludeFilter.value || selectedExcludeTag;
+        const incomingTagsKey = message.allTags ? message.allTags.join('|') : '';
 
-        if (message.allTags) {
-          for (let i = 0; i < message.allTags.length; i++) {
-            const tag = message.allTags[i];
-            const opt1 = document.createElement('option');
-            opt1.value = tag;
-            opt1.textContent = '#' + tag;
-            if (tag === currentTag) opt1.selected = true;
-            tagFilter.appendChild(opt1);
+        if (incomingTagsKey !== lastRenderedTagsKey) {
+          lastRenderedTagsKey = incomingTagsKey;
+          tagFilter.innerHTML = '<option value="">Filter by Tag: All</option>';
+          tagExcludeFilter.innerHTML = '<option value="">Exclude Tag: None</option>';
 
-            const opt2 = document.createElement('option');
-            opt2.value = tag;
-            opt2.textContent = '#' + tag;
-            if (tag === currentExcludeTag) opt2.selected = true;
-            tagExcludeFilter.appendChild(opt2);
+          if (message.allTags) {
+            for (let i = 0; i < message.allTags.length; i++) {
+              const tag = message.allTags[i];
+              const opt1 = document.createElement('option');
+              opt1.value = tag;
+              opt1.textContent = '#' + tag;
+              if (tag === currentTag) opt1.selected = true;
+              tagFilter.appendChild(opt1);
+
+              const opt2 = document.createElement('option');
+              opt2.value = tag;
+              opt2.textContent = '#' + tag;
+              if (tag === currentExcludeTag) opt2.selected = true;
+              tagExcludeFilter.appendChild(opt2);
+            }
           }
+        } else {
+          tagFilter.value = currentTag;
+          tagExcludeFilter.value = currentExcludeTag;
         }
 
         applyFilters();

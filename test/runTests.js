@@ -350,6 +350,38 @@ test('getAllTags respects excludedTags configuration', () => {
   assert.strictEqual(fullTags.some(t => t.tag === 'anime'), true);
 });
 
+test('getGraphData produces tag nodes and attachment nodes with correct types and links', () => {
+  const indexer = new WorkspaceNotesIndexer();
+  indexer.mediaToPathIndex.set('diagram.png', new Set(['/workspace/assets/diagram.png']));
+  
+  indexer.indexFileContent('/workspace/note1.md', `# Note 1\nSee [[note2]] and ![[diagram.png]] #research`);
+  indexer.indexFileContent('/workspace/note2.md', `# Note 2\nCheck [[note1]] #research #ai`);
+  indexer._resolveAllLinkTargets();
+
+  const graph = indexer.getGraphData();
+  
+  const noteNodes = graph.nodes.filter(n => n.type === 'note');
+  const tagNodes = graph.nodes.filter(n => n.type === 'tag');
+  const attachmentNodes = graph.nodes.filter(n => n.type === 'attachment');
+
+  assert.strictEqual(noteNodes.length, 2);
+  assert.strictEqual(tagNodes.length, 2); // #research and #ai
+  assert.strictEqual(attachmentNodes.length, 1); // diagram.png
+
+  const tagLabels = tagNodes.map(n => n.label);
+  assert.strictEqual(tagLabels.includes('#research'), true);
+  assert.strictEqual(tagLabels.includes('#ai'), true);
+
+  const attachLabels = attachmentNodes.map(n => n.label);
+  assert.strictEqual(attachLabels.includes('diagram.png'), true);
+
+  const tagLinks = graph.links.filter(l => l.type === 'tag');
+  assert.strictEqual(tagLinks.length, 3); // note1->research, note2->research, note2->ai
+
+  const attachLinks = graph.links.filter(l => l.type === 'attachment');
+  assert.strictEqual(attachLinks.length, 1); // note1->diagram.png
+});
+
 // --- Backlinks & Unlinked Mentions Tests ---
 console.log('\nBacklinks & Unlinked Mentions:');
 
