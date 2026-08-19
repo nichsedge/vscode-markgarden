@@ -394,7 +394,7 @@ class FrontmatterCompletionProvider {
   }
 
   provideCompletionItems(document, position, _token, _context) {
-    const config = vscode.workspace.getConfiguration('obsidian-notes');
+    const config = vscode.workspace.getConfiguration('markgarden');
     const enabled = config.get('frontmatter.enableCompletions', true);
     if (!enabled) return null;
 
@@ -576,7 +576,7 @@ function registerFrontmatterSaveHandler(context, _indexer) {
       return;
     }
 
-    const config = vscode.workspace.getConfiguration('obsidian-notes');
+    const config = vscode.workspace.getConfiguration('markgarden');
     const autoUpdate = config.get('frontmatter.autoUpdateModifiedDate', true);
     if (!autoUpdate) return;
 
@@ -604,7 +604,7 @@ function registerFrontmatterSaveHandler(context, _indexer) {
 async function addPropertyCommand(indexer) {
   const editor = vscode.window.activeTextEditor;
   if (!editor || editor.document.languageId !== 'markdown') {
-    vscode.window.showWarningMessage('Obsidian Notes: Please open a Markdown file to add frontmatter properties.');
+    vscode.window.showWarningMessage('MarkGarden: Please open a Markdown file to add frontmatter properties.');
     return;
   }
 
@@ -685,7 +685,7 @@ async function addPropertyCommand(indexer) {
     editBuilder.replace(fullRange, updatedContent);
   });
 
-  vscode.window.showInformationMessage(`Obsidian Notes: Property "${propertyKey}" set successfully.`);
+  vscode.window.showInformationMessage(`MarkGarden: Property "${propertyKey}" set successfully.`);
 }
 
 /**
@@ -694,7 +694,7 @@ async function addPropertyCommand(indexer) {
 async function formatFrontmatterCommand() {
   const editor = vscode.window.activeTextEditor;
   if (!editor || editor.document.languageId !== 'markdown') {
-    vscode.window.showWarningMessage('Obsidian Notes: Please open a Markdown file to format frontmatter.');
+    vscode.window.showWarningMessage('MarkGarden: Please open a Markdown file to format frontmatter.');
     return;
   }
 
@@ -703,7 +703,7 @@ async function formatFrontmatterCommand() {
   const formatted = formatFrontmatterInMarkdown(content);
 
   if (formatted === content) {
-    vscode.window.showInformationMessage('Obsidian Notes: Frontmatter is already cleanly formatted.');
+    vscode.window.showInformationMessage('MarkGarden: Frontmatter is already cleanly formatted.');
     return;
   }
 
@@ -712,7 +712,7 @@ async function formatFrontmatterCommand() {
     editBuilder.replace(fullRange, formatted);
   });
 
-  vscode.window.showInformationMessage('Obsidian Notes: Formatted frontmatter successfully.');
+  vscode.window.showInformationMessage('MarkGarden: Formatted frontmatter successfully.');
 }
 
 /**
@@ -720,13 +720,13 @@ async function formatFrontmatterCommand() {
  */
 async function renamePropertyWorkspaceCommand(indexer) {
   if (!indexer) {
-    vscode.window.showErrorMessage('Obsidian Notes: Workspace indexer not available.');
+    vscode.window.showErrorMessage('MarkGarden: Workspace indexer not available.');
     return;
   }
 
   const allKeys = indexer.getAllPropertyKeys();
   if (allKeys.length === 0) {
-    vscode.window.showInformationMessage('Obsidian Notes: No frontmatter properties found in workspace.');
+    vscode.window.showInformationMessage('MarkGarden: No frontmatter properties found in workspace.');
     return;
   }
 
@@ -757,7 +757,7 @@ async function renamePropertyWorkspaceCommand(indexer) {
 
   const targetNotes = indexer.getNotesWithProperty(selectedKey.key);
   if (targetNotes.length === 0) {
-    vscode.window.showInformationMessage(`Obsidian Notes: No notes currently contain property "${selectedKey.key}".`);
+    vscode.window.showInformationMessage(`MarkGarden: No notes currently contain property "${selectedKey.key}".`);
     return;
   }
 
@@ -786,7 +786,7 @@ async function renamePropertyWorkspaceCommand(indexer) {
   }
 
   await vscode.workspace.applyEdit(workspaceEdit);
-  vscode.window.showInformationMessage(`Obsidian Notes: Renamed property "${selectedKey.key}" to "${newKey.trim()}" in ${targetNotes.length} note(s).`);
+  vscode.window.showInformationMessage(`MarkGarden: Renamed property "${selectedKey.key}" to "${newKey.trim()}" in ${targetNotes.length} note(s).`);
 }
 
 /**
@@ -795,7 +795,7 @@ async function renamePropertyWorkspaceCommand(indexer) {
 async function convertInlineTagsToFrontmatterCommand(_indexer) {
   const editor = vscode.window.activeTextEditor;
   if (!editor || editor.document.languageId !== 'markdown') {
-    vscode.window.showWarningMessage('Obsidian Notes: Please open a Markdown file to convert tags.');
+    vscode.window.showWarningMessage('MarkGarden: Please open a Markdown file to convert tags.');
     return;
   }
 
@@ -804,7 +804,7 @@ async function convertInlineTagsToFrontmatterCommand(_indexer) {
   const inlineTags = extractInlineTags(content);
 
   if (inlineTags.size === 0) {
-    vscode.window.showInformationMessage('Obsidian Notes: No inline #tags found in this note.');
+    vscode.window.showInformationMessage('MarkGarden: No inline #tags found in this note.');
     return;
   }
 
@@ -824,7 +824,7 @@ async function convertInlineTagsToFrontmatterCommand(_indexer) {
     editBuilder.replace(fullRange, updatedContent);
   });
 
-  vscode.window.showInformationMessage(`Obsidian Notes: Added ${count} tag(s) to frontmatter.`);
+  vscode.window.showInformationMessage(`MarkGarden: Added ${count} tag(s) to frontmatter.`);
 }
 
 /**
@@ -833,7 +833,7 @@ async function convertInlineTagsToFrontmatterCommand(_indexer) {
 async function syncTitleWithFilenameCommand() {
   const editor = vscode.window.activeTextEditor;
   if (!editor || editor.document.languageId !== 'markdown') {
-    vscode.window.showWarningMessage('Obsidian Notes: Please open a Markdown file to sync title.');
+    vscode.window.showWarningMessage('MarkGarden: Please open a Markdown file to sync title.');
     return;
   }
 
@@ -849,7 +849,7 @@ async function syncTitleWithFilenameCommand() {
   const updatedContent = setPropertyInMarkdown(content, 'title', targetTitle);
 
   if (updatedContent === content) {
-    vscode.window.showInformationMessage(`Obsidian Notes: Frontmatter title is already "${targetTitle}".`);
+    vscode.window.showInformationMessage(`MarkGarden: Frontmatter title is already "${targetTitle}".`);
     return;
   }
 
@@ -858,7 +858,7 @@ async function syncTitleWithFilenameCommand() {
     editBuilder.replace(fullRange, updatedContent);
   });
 
-  vscode.window.showInformationMessage(`Obsidian Notes: Synced frontmatter title to "${targetTitle}".`);
+  vscode.window.showInformationMessage(`MarkGarden: Synced frontmatter title to "${targetTitle}".`);
 }
 
 module.exports = {

@@ -95,7 +95,7 @@ function formatCalloutBlock(content, type = 'note', title = '', fold = null) {
 async function insertCalloutCommand() {
   const editor = vscode.window.activeTextEditor;
   if (!editor || editor.document.languageId !== 'markdown') {
-    vscode.window.showWarningMessage('Obsidian Notes: Please open a Markdown file to insert a callout.');
+    vscode.window.showWarningMessage('MarkGarden: Please open a Markdown file to insert a callout.');
     return;
   }
 
@@ -191,7 +191,7 @@ class CalloutEditorDecorator {
   updateDecorations(editor) {
     if (!editor || !editor.document || editor.document.languageId !== 'markdown') return;
 
-    const config = vscode.workspace.getConfiguration('obsidian-notes');
+    const config = vscode.workspace.getConfiguration('markgarden');
     const enabled = config.get('callouts.enableDecorations', true);
     if (!enabled) {
       this.clear(editor);

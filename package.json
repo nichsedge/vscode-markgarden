@@ -1,6 +1,6 @@
 {
-  "name": "obsidian-notes",
-  "displayName": "Obsidian Notes Integration",
+  "name": "markgarden",
+  "displayName": "MarkGarden: Digital Garden & PKM",
   "description": "Obsidian-like daily notes, template insertion, Wikilinks navigation, category/tag management, and interactive graph view for digital garden workspaces.",
   "version": "1.4.0",
   "publisher": "al",
@@ -10,12 +10,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nichsedge/vscode-obsidian-notes.git"
+    "url": "git+https://github.com/nichsedge/vscode-markgarden.git"
   },
   "bugs": {
-    "url": "https://github.com/nichsedge/vscode-obsidian-notes/issues"
+    "url": "https://github.com/nichsedge/vscode-markgarden/issues"
   },
-  "homepage": "https://github.com/nichsedge/vscode-obsidian-notes#readme",
+  "homepage": "https://github.com/nichsedge/vscode-markgarden#readme",
   "engines": {
     "vscode": "^1.75.0"
   },
@@ -46,276 +46,276 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "obsidian-notes-view",
-          "title": "Obsidian Notes",
-          "icon": "resources/obsidian.svg"
+          "id": "markgarden-view",
+          "title": "MarkGarden",
+          "icon": "resources/markgarden.svg"
         }
       ]
     },
     "views": {
-      "obsidian-notes-view": [
+      "markgarden-view": [
         {
-          "id": "obsidian-notes-backlinks",
+          "id": "markgarden-backlinks",
           "name": "Backlinks"
         },
         {
-          "id": "obsidian-notes-tags",
+          "id": "markgarden-tags",
           "name": "Tags"
         },
         {
-          "id": "obsidian-notes-categories",
+          "id": "markgarden-categories",
           "name": "Categories"
         },
         {
-          "id": "obsidian-notes-digital-garden",
+          "id": "markgarden-digital-garden",
           "name": "Digital Garden"
         }
       ]
     },
     "commands": [
       {
-        "command": "obsidian-notes.openGraphView",
+        "command": "markgarden.openGraphView",
         "title": "Open Graph View",
-        "category": "Obsidian Notes",
+        "category": "MarkGarden",
         "icon": "$(type-hierarchy)"
       },
       {
-        "command": "obsidian-notes.openLocalGraphView",
+        "command": "markgarden.openLocalGraphView",
         "title": "Open Local Graph View",
-        "category": "Obsidian Notes",
+        "category": "MarkGarden",
         "icon": "$(references)"
       },
       {
-        "command": "obsidian-notes.createDailyNote",
+        "command": "markgarden.createDailyNote",
         "title": "Create Daily Note",
-        "category": "Obsidian Notes"
+        "category": "MarkGarden"
       },
       {
-        "command": "obsidian-notes.insertTemplate",
+        "command": "markgarden.insertTemplate",
         "title": "Insert Template",
-        "category": "Obsidian Notes"
+        "category": "MarkGarden"
       },
       {
-        "command": "obsidian-notes.openLinkAtCursor",
+        "command": "markgarden.openLinkAtCursor",
         "title": "Follow Link Under Cursor",
-        "category": "Obsidian Notes"
+        "category": "MarkGarden"
       },
       {
-        "command": "obsidian-notes.addTag",
+        "command": "markgarden.addTag",
         "title": "Add Tag to Current Note",
-        "category": "Obsidian Notes"
+        "category": "MarkGarden"
       },
       {
-        "command": "obsidian-notes.removeTag",
+        "command": "markgarden.removeTag",
         "title": "Remove Tag from Current Note",
-        "category": "Obsidian Notes"
+        "category": "MarkGarden"
       },
       {
-        "command": "obsidian-notes.findNotesByTag",
+        "command": "markgarden.findNotesByTag",
         "title": "Find Notes by Tag",
-        "category": "Obsidian Notes"
+        "category": "MarkGarden"
       },
       {
-        "command": "obsidian-notes.renameTag",
+        "command": "markgarden.renameTag",
         "title": "Rename Tag Across Workspace",
-        "category": "Obsidian Notes"
+        "category": "MarkGarden"
       },
       {
-        "command": "obsidian-notes.addCategory",
+        "command": "markgarden.addCategory",
         "title": "Add Category to Current Note",
-        "category": "Obsidian Notes"
+        "category": "MarkGarden"
       },
       {
-        "command": "obsidian-notes.removeCategory",
+        "command": "markgarden.removeCategory",
         "title": "Remove Category from Current Note",
-        "category": "Obsidian Notes"
+        "category": "MarkGarden"
       },
       {
-        "command": "obsidian-notes.findNotesByCategory",
+        "command": "markgarden.findNotesByCategory",
         "title": "Find Notes by Category",
-        "category": "Obsidian Notes"
+        "category": "MarkGarden"
       },
       {
-        "command": "obsidian-notes.renameCategory",
+        "command": "markgarden.renameCategory",
         "title": "Rename Category Across Workspace",
-        "category": "Obsidian Notes"
+        "category": "MarkGarden"
       },
       {
-        "command": "obsidian-notes.refreshIndex",
+        "command": "markgarden.refreshIndex",
         "title": "Refresh Notes Index",
-        "category": "Obsidian Notes"
+        "category": "MarkGarden"
       },
       {
-        "command": "obsidian-notes.togglePinBacklinks",
+        "command": "markgarden.togglePinBacklinks",
         "title": "Toggle Pin Note",
-        "category": "Obsidian Notes",
+        "category": "MarkGarden",
         "icon": "$(pin)"
       },
       {
-        "command": "obsidian-notes.refreshBacklinks",
+        "command": "markgarden.refreshBacklinks",
         "title": "Refresh Backlinks",
-        "category": "Obsidian Notes",
+        "category": "MarkGarden",
         "icon": "$(refresh)"
       },
       {
-        "command": "obsidian-notes.convertUnlinkedMentionToWikilink",
+        "command": "markgarden.convertUnlinkedMentionToWikilink",
         "title": "Convert to Wikilink",
-        "category": "Obsidian Notes",
+        "category": "MarkGarden",
         "icon": "$(link)"
       },
       {
-        "command": "obsidian-notes.extractSelectionToNote",
+        "command": "markgarden.extractSelectionToNote",
         "title": "Extract Selection to Note (Zettelkasten Refactor)",
-        "category": "Obsidian Notes",
+        "category": "MarkGarden",
         "icon": "$(symbol-file)"
       },
       {
-        "command": "obsidian-notes.addProperty",
+        "command": "markgarden.addProperty",
         "title": "Add / Set Frontmatter Property",
-        "category": "Obsidian Notes",
+        "category": "MarkGarden",
         "icon": "$(list-selection)"
       },
       {
-        "command": "obsidian-notes.formatFrontmatter",
+        "command": "markgarden.formatFrontmatter",
         "title": "Format Frontmatter",
-        "category": "Obsidian Notes"
+        "category": "MarkGarden"
       },
       {
-        "command": "obsidian-notes.renameProperty",
+        "command": "markgarden.renameProperty",
         "title": "Rename Property Across Workspace",
-        "category": "Obsidian Notes"
+        "category": "MarkGarden"
       },
       {
-        "command": "obsidian-notes.convertInlineTagsToFrontmatter",
+        "command": "markgarden.convertInlineTagsToFrontmatter",
         "title": "Convert Inline Tags to Frontmatter",
-        "category": "Obsidian Notes"
+        "category": "MarkGarden"
       },
       {
-        "command": "obsidian-notes.syncTitleWithFilename",
+        "command": "markgarden.syncTitleWithFilename",
         "title": "Sync Note Title with Filename",
-        "category": "Obsidian Notes"
+        "category": "MarkGarden"
       },
       {
-        "command": "obsidian-notes.togglePublishStatus",
+        "command": "markgarden.togglePublishStatus",
         "title": "Toggle Publish Status",
-        "category": "Obsidian Notes",
+        "category": "MarkGarden",
         "icon": "$(globe)"
       },
       {
-        "command": "obsidian-notes.setGrowthStage",
+        "command": "markgarden.setGrowthStage",
         "title": "Set Growth Stage (🌱/🌿/🌲)",
-        "category": "Obsidian Notes",
+        "category": "MarkGarden",
         "icon": "$(symbol-event)"
       },
       {
-        "command": "obsidian-notes.runGardenAudit",
+        "command": "markgarden.runGardenAudit",
         "title": "Run Digital Garden Audit",
-        "category": "Obsidian Notes",
+        "category": "MarkGarden",
         "icon": "$(pulse)"
       },
       {
-        "command": "obsidian-notes.refreshDigitalGarden",
+        "command": "markgarden.refreshDigitalGarden",
         "title": "Refresh Digital Garden",
-        "category": "Obsidian Notes",
+        "category": "MarkGarden",
         "icon": "$(refresh)"
       },
       {
-        "command": "obsidian-notes.insertCallout",
+        "command": "markgarden.insertCallout",
         "title": "Insert Obsidian Callout / Admonition",
-        "category": "Obsidian Notes",
+        "category": "MarkGarden",
         "icon": "$(notebook)"
       }
     ],
     "menus": {
       "editor/title": [
         {
-          "command": "obsidian-notes.openGraphView",
+          "command": "markgarden.openGraphView",
           "when": "editorLangId == markdown",
           "group": "navigation@1"
         },
         {
-          "command": "obsidian-notes.openLocalGraphView",
+          "command": "markgarden.openLocalGraphView",
           "when": "editorLangId == markdown",
           "group": "navigation@2"
         }
       ],
       "view/title": [
         {
-          "command": "obsidian-notes.togglePinBacklinks",
-          "when": "view == obsidian-notes-backlinks",
+          "command": "markgarden.togglePinBacklinks",
+          "when": "view == markgarden-backlinks",
           "group": "navigation@1"
         },
         {
-          "command": "obsidian-notes.refreshBacklinks",
-          "when": "view == obsidian-notes-backlinks",
+          "command": "markgarden.refreshBacklinks",
+          "when": "view == markgarden-backlinks",
           "group": "navigation@2"
         },
         {
-          "command": "obsidian-notes.openGraphView",
-          "when": "view == obsidian-notes-tags || view == obsidian-notes-categories",
+          "command": "markgarden.openGraphView",
+          "when": "view == markgarden-tags || view == markgarden-categories",
           "group": "navigation@1"
         },
         {
-          "command": "obsidian-notes.refreshIndex",
-          "when": "view == obsidian-notes-tags || view == obsidian-notes-categories",
+          "command": "markgarden.refreshIndex",
+          "when": "view == markgarden-tags || view == markgarden-categories",
           "group": "navigation@2"
         },
         {
-          "command": "obsidian-notes.refreshDigitalGarden",
-          "when": "view == obsidian-notes-digital-garden",
+          "command": "markgarden.refreshDigitalGarden",
+          "when": "view == markgarden-digital-garden",
           "group": "navigation@1"
         },
         {
-          "command": "obsidian-notes.runGardenAudit",
-          "when": "view == obsidian-notes-digital-garden",
+          "command": "markgarden.runGardenAudit",
+          "when": "view == markgarden-digital-garden",
           "group": "navigation@2"
         }
       ],
       "view/item/context": [
         {
-          "command": "obsidian-notes.convertUnlinkedMentionToWikilink",
-          "when": "view == obsidian-notes-backlinks && viewItem == unlinkedMentionSnippet",
+          "command": "markgarden.convertUnlinkedMentionToWikilink",
+          "when": "view == markgarden-backlinks && viewItem == unlinkedMentionSnippet",
           "group": "inline"
         },
         {
-          "command": "obsidian-notes.renameTag",
+          "command": "markgarden.renameTag",
           "when": "viewItem == obsidianTag",
           "group": "inline"
         },
         {
-          "command": "obsidian-notes.renameCategory",
+          "command": "markgarden.renameCategory",
           "when": "viewItem == obsidianCategory",
           "group": "inline"
         }
       ],
       "editor/context": [
         {
-          "command": "obsidian-notes.insertCallout",
+          "command": "markgarden.insertCallout",
           "when": "editorTextFocus && editorLangId == markdown",
           "group": "1_modification@1"
         },
         {
-          "command": "obsidian-notes.togglePublishStatus",
+          "command": "markgarden.togglePublishStatus",
           "when": "editorTextFocus && editorLangId == markdown",
           "group": "1_modification@2"
         },
         {
-          "command": "obsidian-notes.setGrowthStage",
+          "command": "markgarden.setGrowthStage",
           "when": "editorTextFocus && editorLangId == markdown",
           "group": "1_modification@3"
         },
         {
-          "command": "obsidian-notes.extractSelectionToNote",
+          "command": "markgarden.extractSelectionToNote",
           "when": "editorHasSelection && editorTextFocus && editorLangId == markdown",
           "group": "1_modification@4"
         },
         {
-          "command": "obsidian-notes.openLinkAtCursor",
+          "command": "markgarden.openLinkAtCursor",
           "when": "editorTextFocus && editorLangId == markdown",
           "group": "navigation"
         },
         {
-          "command": "obsidian-notes.openLocalGraphView",
+          "command": "markgarden.openLocalGraphView",
           "when": "editorTextFocus && editorLangId == markdown",
           "group": "navigation"
         }
@@ -323,88 +323,88 @@
     },
     "keybindings": [
       {
-        "command": "obsidian-notes.openGraphView",
+        "command": "markgarden.openGraphView",
         "key": "ctrl+alt+g",
         "mac": "cmd+alt+g"
       },
       {
-        "command": "obsidian-notes.createDailyNote",
+        "command": "markgarden.createDailyNote",
         "key": "ctrl+alt+d",
         "mac": "cmd+alt+d"
       },
       {
-        "command": "obsidian-notes.insertTemplate",
+        "command": "markgarden.insertTemplate",
         "key": "ctrl+alt+t",
         "mac": "cmd+alt+t"
       },
       {
-        "command": "obsidian-notes.insertCallout",
+        "command": "markgarden.insertCallout",
         "key": "ctrl+alt+c",
         "mac": "cmd+alt+c",
         "when": "editorTextFocus && editorLangId == markdown"
       },
       {
-        "command": "obsidian-notes.togglePublishStatus",
+        "command": "markgarden.togglePublishStatus",
         "key": "ctrl+alt+p",
         "mac": "cmd+alt+p",
         "when": "editorTextFocus && editorLangId == markdown"
       },
       {
-        "command": "obsidian-notes.openLinkAtCursor",
+        "command": "markgarden.openLinkAtCursor",
         "key": "alt+enter",
         "when": "editorTextFocus && editorLangId == markdown"
       },
       {
-        "command": "obsidian-notes.extractSelectionToNote",
+        "command": "markgarden.extractSelectionToNote",
         "key": "ctrl+alt+e",
         "mac": "cmd+alt+e",
         "when": "editorHasSelection && editorTextFocus && editorLangId == markdown"
       }
     ],
     "configuration": {
-      "title": "Obsidian Notes",
+      "title": "MarkGarden",
       "properties": {
-        "obsidian-notes.hoverPreviewEnabled": {
+        "markgarden.hoverPreviewEnabled": {
           "type": "boolean",
           "default": true,
           "description": "Show rich markdown preview tooltip when hovering over [[wikilinks]], ![[embeds]], headings, and block references."
         },
-        "obsidian-notes.hoverPreviewMaxLength": {
+        "markgarden.hoverPreviewMaxLength": {
           "type": "number",
           "default": 1200,
           "description": "Maximum character length for hover preview body before truncation."
         },
-        "obsidian-notes.templatesFolder": {
+        "markgarden.templatesFolder": {
           "type": "string",
           "default": "templates",
           "description": "Path to the templates folder relative to the workspace root."
         },
-        "obsidian-notes.excludeTemplatesFromIndex": {
+        "markgarden.excludeTemplatesFromIndex": {
           "type": "boolean",
           "default": true,
           "description": "Exclude templates folder from note graph, backlinks, and wikilink autocompletion so template drafts do not pollute the workspace index."
         },
-        "obsidian-notes.dailyNotesFolder": {
+        "markgarden.dailyNotesFolder": {
           "type": "string",
           "default": "",
           "description": "Path to the daily notes folder relative to the workspace root (e.g. '', 'journal', etc.)."
         },
-        "obsidian-notes.dailyNoteTemplate": {
+        "markgarden.dailyNoteTemplate": {
           "type": "string",
           "default": "daily.md",
           "description": "Name of the daily note template file (must exist within the templates folder)."
         },
-        "obsidian-notes.dateFormat": {
+        "markgarden.dateFormat": {
           "type": "string",
           "default": "YYYY-MM-DD",
           "description": "Format for today's daily note filename (without .md extension)."
         },
-        "obsidian-notes.openDailyNoteOnStartup": {
+        "markgarden.openDailyNoteOnStartup": {
           "type": "boolean",
           "default": false,
           "description": "Automatically open or create today's daily note on editor startup."
         },
-        "obsidian-notes.newNoteFolderStrategy": {
+        "markgarden.newNoteFolderStrategy": {
           "type": "string",
           "enum": [
             "root",
@@ -414,12 +414,12 @@
           "default": "root",
           "description": "Where to create new notes when following a non-existent [[wikilink]]: 'root' (workspace root), 'sameAsCurrent' (same directory as active note), or 'custom' (configured in notesFolder)."
         },
-        "obsidian-notes.notesFolder": {
+        "markgarden.notesFolder": {
           "type": "string",
           "default": "",
           "description": "Custom destination folder path for new notes when newNoteFolderStrategy is set to 'custom'."
         },
-        "obsidian-notes.tagPrefix": {
+        "markgarden.tagPrefix": {
           "type": "string",
           "enum": [
             "frontmatter",
@@ -428,7 +428,7 @@
           "default": "frontmatter",
           "description": "Default placement style when adding tags: 'frontmatter' (YAML frontmatter) or 'inline' (#tag at end of file)."
         },
-        "obsidian-notes.excludedTags": {
+        "markgarden.excludedTags": {
           "type": "array",
           "items": {
             "type": "string"
@@ -436,7 +436,7 @@
           "default": [],
           "description": "List of tags to exclude from Graph View, Tag tree view, and tag autocompletion (e.g. ['archive', 'daily', 'anime'])."
         },
-        "obsidian-notes.excludedFolders": {
+        "markgarden.excludedFolders": {
           "type": "array",
           "items": {
             "type": "string"
@@ -450,27 +450,27 @@
           ],
           "description": "Glob patterns of directories to exclude from workspace notes and tag indexing."
         },
-        "obsidian-notes.frontmatter.enableCompletions": {
+        "markgarden.frontmatter.enableCompletions": {
           "type": "boolean",
           "default": true,
           "description": "Enable context-aware IntelliSense completions in YAML frontmatter for properties, tags, categories, wikilinks, and values."
         },
-        "obsidian-notes.frontmatter.autoUpdateModifiedDate": {
+        "markgarden.frontmatter.autoUpdateModifiedDate": {
           "type": "boolean",
           "default": true,
           "description": "Automatically update last modified timestamp in YAML frontmatter on saving markdown notes."
         },
-        "obsidian-notes.frontmatter.modifiedDateKey": {
+        "markgarden.frontmatter.modifiedDateKey": {
           "type": "string",
           "default": "updated",
           "description": "Frontmatter property key name used for auto-updating modified timestamps (e.g. 'updated', 'modified', 'lastmod')."
         },
-        "obsidian-notes.frontmatter.dateFormat": {
+        "markgarden.frontmatter.dateFormat": {
           "type": "string",
           "default": "YYYY-MM-DD HH:mm:ss",
           "description": "Date/time format string used when writing timestamps in frontmatter."
         },
-        "obsidian-notes.frontmatter.defaultProperties": {
+        "markgarden.frontmatter.defaultProperties": {
           "type": "array",
           "items": {
             "type": "string"
@@ -487,27 +487,27 @@
           ],
           "description": "List of default property keys suggested in frontmatter completion."
         },
-        "obsidian-notes.digitalGarden.publishProperty": {
+        "markgarden.digitalGarden.publishProperty": {
           "type": "string",
           "default": "publish_external",
           "description": "Frontmatter property key used to determine if a note is published (e.g. 'publish_external', 'publish', 'published')."
         },
-        "obsidian-notes.digitalGarden.growthProperty": {
+        "markgarden.digitalGarden.growthProperty": {
           "type": "string",
           "default": "growth",
           "description": "Frontmatter property key used for note growth stages: seedling 🌱, budding 🌿, evergreen 🌲 (e.g. 'growth', 'stage', 'status')."
         },
-        "obsidian-notes.digitalGarden.enableDiagnostics": {
+        "markgarden.digitalGarden.enableDiagnostics": {
           "type": "boolean",
           "default": true,
           "description": "Enable editor diagnostics/squiggles for broken wikilinks and public-to-private privacy leaks."
         },
-        "obsidian-notes.digitalGarden.showStatusBar": {
+        "markgarden.digitalGarden.showStatusBar": {
           "type": "boolean",
           "default": true,
           "description": "Show interactive Growth Stage and Publish Status indicators in the VS Code status bar."
         },
-        "obsidian-notes.callouts.enableDecorations": {
+        "markgarden.callouts.enableDecorations": {
           "type": "boolean",
           "default": true,
           "description": "Highlight Obsidian Callouts / Admonitions (> [!note]) in the editor with custom tint and borders."

@@ -85,7 +85,7 @@ function getWikilinkAtPosition(document, position) {
  * Resolves destination folder for newly created notes.
  */
 function resolveNewNoteFolder(sourceFilePath) {
-  const config = vscode.workspace.getConfiguration('obsidian-notes');
+  const config = vscode.workspace.getConfiguration('markgarden');
   const strategy = config.get('newNoteFolderStrategy', 'root');
   const customFolder = config.get('notesFolder', '');
   
@@ -199,7 +199,7 @@ function resolveMediaFilePath(mediaTarget, sourceFilePath, indexer = null) {
  * DocumentLinkProvider to make [[wikilinks]] and ![[embeds]] clickable in markdown files.
  * Uses cached parsed wikilinks and pre-resolved link targets from the indexer.
  */
-class ObsidianDocumentLinkProvider {
+class MarkGardenDocumentLinkProvider {
   constructor(indexer) {
     this.indexer = indexer;
   }
@@ -224,7 +224,7 @@ class ObsidianDocumentLinkProvider {
         sourceFile: document.fileName
       }));
 
-      const linkUri = vscode.Uri.parse(`command:obsidian-notes.openWikilink?${commandArgs}`);
+      const linkUri = vscode.Uri.parse(`command:markgarden.openWikilink?${commandArgs}`);
       const docLink = new vscode.DocumentLink(item.range, linkUri);
 
       if (parsed.isMedia) {
@@ -254,7 +254,7 @@ class ObsidianDocumentLinkProvider {
 /**
  * DefinitionProvider to enable F12 ("Go to Definition") on [[wikilinks]].
  */
-class ObsidianDefinitionProvider {
+class MarkGardenDefinitionProvider {
   constructor(indexer) {
     this.indexer = indexer;
   }
@@ -346,7 +346,7 @@ class ObsidianDefinitionProvider {
 /**
  * CompletionItemProvider for [[wikilinks]] note titles, #headings, and #^blocks.
  */
-class ObsidianCompletionItemProvider {
+class MarkGardenCompletionItemProvider {
   constructor(indexer) {
     this.indexer = indexer;
   }
@@ -486,7 +486,7 @@ async function navigateWikilink(targetStr, sourceFilePath, indexer) {
     if (mediaPath) {
       vscode.commands.executeCommand('vscode.open', vscode.Uri.file(mediaPath));
     } else {
-      vscode.window.showWarningMessage(`Obsidian Notes: Media file "${parsed.targetNote}" not found in workspace.`);
+      vscode.window.showWarningMessage(`MarkGarden: Media file "${parsed.targetNote}" not found in workspace.`);
     }
     return;
   }
@@ -498,7 +498,7 @@ async function navigateWikilink(targetStr, sourceFilePath, indexer) {
   // If note doesn't exist, create it
   if (!targetPath || !fs.existsSync(targetPath)) {
     if (!parsed.targetNote) {
-      vscode.window.showErrorMessage('Obsidian Notes: Invalid link target.');
+      vscode.window.showErrorMessage('MarkGarden: Invalid link target.');
       return;
     }
 
@@ -506,7 +506,7 @@ async function navigateWikilink(targetStr, sourceFilePath, indexer) {
     try {
       fs.mkdirSync(folder, { recursive: true });
     } catch (err) {
-      vscode.window.showErrorMessage(`Obsidian Notes: Failed to create directory: ${err.message}`);
+      vscode.window.showErrorMessage(`MarkGarden: Failed to create directory: ${err.message}`);
       return;
     }
 
@@ -517,9 +517,9 @@ async function navigateWikilink(targetStr, sourceFilePath, indexer) {
     try {
       fs.writeFileSync(targetPath, initialContent, 'utf8');
       indexer.handleFileChange(targetPath);
-      vscode.window.showInformationMessage(`Obsidian Notes: Created note "${newFilename}".`);
+      vscode.window.showInformationMessage(`MarkGarden: Created note "${newFilename}".`);
     } catch (err) {
-      vscode.window.showErrorMessage(`Obsidian Notes: Failed to create note: ${err.message}`);
+      vscode.window.showErrorMessage(`MarkGarden: Failed to create note: ${err.message}`);
       return;
     }
   }
@@ -555,7 +555,7 @@ async function navigateWikilink(targetStr, sourceFilePath, indexer) {
         editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
         return;
       } else {
-        vscode.window.showWarningMessage(`Obsidian Notes: Block reference "^${parsed.blockId}" not found in "${path.basename(targetPath)}".`);
+        vscode.window.showWarningMessage(`MarkGarden: Block reference "^${parsed.blockId}" not found in "${path.basename(targetPath)}".`);
       }
     }
 
@@ -579,11 +579,11 @@ async function navigateWikilink(targetStr, sourceFilePath, indexer) {
         editor.selection = new vscode.Selection(pos, pos);
         editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
       } else {
-        vscode.window.showWarningMessage(`Obsidian Notes: Heading "#${parsed.heading}" not found in "${path.basename(targetPath)}".`);
+        vscode.window.showWarningMessage(`MarkGarden: Heading "#${parsed.heading}" not found in "${path.basename(targetPath)}".`);
       }
     }
   } catch (err) {
-    vscode.window.showErrorMessage(`Obsidian Notes: Failed to open document: ${err.message}`);
+    vscode.window.showErrorMessage(`MarkGarden: Failed to open document: ${err.message}`);
   }
 }
 
@@ -598,7 +598,7 @@ async function openLinkAtCursor(indexer) {
 
   const link = getWikilinkAtPosition(editor.document, editor.selection.active);
   if (!link) {
-    vscode.window.showInformationMessage('Obsidian Notes: Cursor is not on a [[wikilink]].');
+    vscode.window.showInformationMessage('MarkGarden: Cursor is not on a [[wikilink]].');
     return;
   }
 
@@ -612,7 +612,7 @@ module.exports = {
   resolveMediaFilePath,
   navigateWikilink,
   openLinkAtCursor,
-  ObsidianDocumentLinkProvider,
-  ObsidianDefinitionProvider,
-  ObsidianCompletionItemProvider
+  MarkGardenDocumentLinkProvider,
+  MarkGardenDefinitionProvider,
+  MarkGardenCompletionItemProvider
 };

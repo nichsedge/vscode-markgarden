@@ -99,7 +99,7 @@ class GraphViewManager {
               const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(message.filePath));
               await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
             } catch (err) {
-              vscode.window.showErrorMessage(`Obsidian Notes: Failed to open note: ${err.message}`);
+              vscode.window.showErrorMessage(`MarkGarden: Failed to open note: ${err.message}`);
             }
           }
           break;

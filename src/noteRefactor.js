@@ -58,13 +58,13 @@ function generateRefactoredNoteContent(title, selectionText, sourceNoteName, dat
 async function extractSelectionToNote(indexer) {
   const editor = vscode.window.activeTextEditor;
   if (!editor || editor.document.languageId !== 'markdown') {
-    vscode.window.showWarningMessage('Obsidian Notes: Please open a Markdown note to extract text.');
+    vscode.window.showWarningMessage('MarkGarden: Please open a Markdown note to extract text.');
     return;
   }
 
   const selection = editor.selection;
   if (selection.isEmpty) {
-    vscode.window.showWarningMessage('Obsidian Notes: Please select text to extract into a new note.');
+    vscode.window.showWarningMessage('MarkGarden: Please select text to extract into a new note.');
     return;
   }
 
@@ -136,7 +136,7 @@ async function extractSelectionToNote(indexer) {
   try {
     fs.mkdirSync(targetFolder, { recursive: true });
   } catch (err) {
-    vscode.window.showErrorMessage(`Obsidian Notes: Failed to create folder: ${err.message}`);
+    vscode.window.showErrorMessage(`MarkGarden: Failed to create folder: ${err.message}`);
     return;
   }
 
@@ -159,7 +159,7 @@ async function extractSelectionToNote(indexer) {
       indexer.handleFileChange(targetPath);
     }
   } catch (err) {
-    vscode.window.showErrorMessage(`Obsidian Notes: Failed to write file: ${err.message}`);
+    vscode.window.showErrorMessage(`MarkGarden: Failed to write file: ${err.message}`);
     return;
   }
 
@@ -171,7 +171,7 @@ async function extractSelectionToNote(indexer) {
   }
 
   const openAction = await vscode.window.showInformationMessage(
-    `Obsidian Notes: Extracted selection to "${title}.md".`,
+    `MarkGarden: Extracted selection to "${title}.md".`,
     'Open Note'
   );
 

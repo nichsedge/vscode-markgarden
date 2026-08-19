@@ -1,4 +1,4 @@
-# Obsidian Notes VS Code Extension
+# MarkGarden VS Code Extension
 
 An elegant and high-performance VS Code extension that brings Obsidian's premium note-taking workflows directly into your editor: **Interactive Graph View**, **Wikilinks Navigation (`[[ ]]`)**, **Tag & Category Management**, **Daily Notes**, and **Smart Template Insertion**. Perfect for Quartz users, markdown journalers, and digital gardeners.
 
@@ -21,8 +21,8 @@ Visualize your knowledge network with a stunning, physics-driven force-directed 
   - Single click on any node opens the markdown note in the editor.
   - Fit-to-screen view and simulation pause/resume.
 * **Commands & Shortcuts**:
-  - `Obsidian Notes: Open Graph View` (`Ctrl+Alt+G` / `Cmd+Alt+G` or click the graph icon in the editor title bar).
-  - `Obsidian Notes: Open Local Graph View`.
+  - `MarkGarden: Open Graph View` (`Ctrl+Alt+G` / `Cmd+Alt+G` or click the graph icon in the editor title bar).
+  - `MarkGarden: Open Local Graph View`.
 
 ### 🔗 Wikilink Navigation & Auto-Creation (`[[ ]]`)
 Experience seamless cross-note hyperlinking just like in Obsidian:
@@ -41,14 +41,14 @@ Organize your second brain with full hybrid tag and category support:
   - **Tags Explorer**: Displays all workspace tags with note count badges (e.g. `🏷️ project (5)`). Expand to view matching notes and click to open.
   - **Categories Explorer**: Displays all workspace categories with note counts and note drill-downs.
 * **Command Palette Actions**:
-  - `Obsidian Notes: Add Tag to Current Note` (adds to YAML frontmatter or inline)
-  - `Obsidian Notes: Remove Tag from Current Note`
-  - `Obsidian Notes: Add Category to Current Note`
-  - `Obsidian Notes: Remove Category from Current Note`
-  - `Obsidian Notes: Find Notes by Tag` (QuickPick search)
-  - `Obsidian Notes: Find Notes by Category` (QuickPick search)
-  - `Obsidian Notes: Rename Tag Across Workspace` (batch updates frontmatter and inline hashtags across all markdown notes)
-  - `Obsidian Notes: Rename Category Across Workspace` (batch updates frontmatter across all markdown notes)
+  - `MarkGarden: Add Tag to Current Note` (adds to YAML frontmatter or inline)
+  - `MarkGarden: Remove Tag from Current Note`
+  - `MarkGarden: Add Category to Current Note`
+  - `MarkGarden: Remove Category from Current Note`
+  - `MarkGarden: Find Notes by Tag` (QuickPick search)
+  - `MarkGarden: Find Notes by Category` (QuickPick search)
+  - `MarkGarden: Rename Tag Across Workspace` (batch updates frontmatter and inline hashtags across all markdown notes)
+  - `MarkGarden: Rename Category Across Workspace` (batch updates frontmatter across all markdown notes)
 * **Tag IntelliSense**: Typing `#` provides autocompletion of existing workspace tags (smartly filtered to ignore markdown `# Heading` syntax, code blocks, and URLs).
 
 ### 🔍 Hover Note Previews & Transclusion (`![[ ]]`)
@@ -76,14 +76,14 @@ Link to granular paragraphs, quotes, and list items across your workspace:
 
 ### 📅 Daily Note
 Create or open today's daily log file instantly. 
-* **Command**: `Obsidian Notes: Create Daily Note`
+* **Command**: `MarkGarden: Create Daily Note`
 * **Keyboard Shortcut**: `Ctrl+Alt+D` (Windows/Linux) or `Cmd+Alt+D` (macOS)
 * **Smart Templating**: If today's daily note doesn't exist, it's automatically created. If a template is configured (e.g. `templates/daily.md`), it is read, parsed, and populated with resolved timestamps and filename values.
 * **Auto-Open**: Optionally open or create your daily note automatically on editor startup.
 
 ### 📋 Insert Template
 Quickly insert processed markdown templates into your active markdown file at the cursor position.
-* **Command**: `Obsidian Notes: Insert Template`
+* **Command**: `MarkGarden: Insert Template`
 * **Keyboard Shortcut**: `Ctrl+Alt+T` (Windows/Linux) or `Cmd+Alt+T` (macOS)
 * **Metadata-Rich Dropdown**: Scans your templates folder and reads the YAML frontmatter of each template to display Title, Filepath, Description, and Tags in an elegant, search-filterable VS Code QuickPick selector.
 
@@ -98,11 +98,11 @@ Supercharge frontmatter authoring with full Obsidian-like context-aware editing,
 * **Auto-Update Modified Date on Save**:
   - Automatically updates the `updated:` or `modified:` timestamp in frontmatter on save without breaking formatting.
 * **Frontmatter Management Commands**:
-  - `Obsidian Notes: Add / Set Frontmatter Property`: QuickPick to select or create a property key and set its value.
-  - `Obsidian Notes: Format Frontmatter`: Normalizes YAML indentation, key order, and list syntax.
-  - `Obsidian Notes: Rename Property Across Workspace`: Batch-renames a frontmatter property key across all notes in the vault.
-  - `Obsidian Notes: Convert Inline Tags to Frontmatter`: Extracts inline `#tags` and moves/merges them into frontmatter `tags:`.
-  - `Obsidian Notes: Sync Note Title with Filename`: Synchronizes `title:` property with filename or H1 header.
+  - `MarkGarden: Add / Set Frontmatter Property`: QuickPick to select or create a property key and set its value.
+  - `MarkGarden: Format Frontmatter`: Normalizes YAML indentation, key order, and list syntax.
+  - `MarkGarden: Rename Property Across Workspace`: Batch-renames a frontmatter property key across all notes in the vault.
+  - `MarkGarden: Convert Inline Tags to Frontmatter`: Extracts inline `#tags` and moves/merges them into frontmatter `tags:`.
+  - `MarkGarden: Sync Note Title with Filename`: Synchronizes `title:` property with filename or H1 header.
 
 ### 🌱 Digital Garden Suite & Growth Stages
 Transform your vault into a well-tended digital garden with full Quartz & Obsidian Publish compatibility:
@@ -116,15 +116,15 @@ Transform your vault into a well-tended digital garden with full Quartz & Obsidi
 * **Live In-Editor Diagnostics**:
   - Non-blocking editor squiggles and warnings on broken links and privacy leaks in publishable notes.
 * **Commands**:
-  - `Obsidian Notes: Toggle Publish Status` (`Ctrl+Alt+P` / `Cmd+Alt+P`)
-  - `Obsidian Notes: Set Growth Stage`
-  - `Obsidian Notes: Run Digital Garden Audit`
-  - `Obsidian Notes: Refresh Digital Garden`
+  - `MarkGarden: Toggle Publish Status` (`Ctrl+Alt+P` / `Cmd+Alt+P`)
+  - `MarkGarden: Set Growth Stage`
+  - `MarkGarden: Run Digital Garden Audit`
+  - `MarkGarden: Refresh Digital Garden`
 
 ### 💡 Obsidian Callouts & Admonitions (`> [!note]`)
 Author expressive, beautiful callout blocks with standard Obsidian syntax:
 * **Supported Callout Types**: `note`, `abstract`, `summary`, `tldr`, `info`, `todo`, `tip`, `hint`, `important`, `success`, `check`, `done`, `question`, `help`, `faq`, `warning`, `caution`, `attention`, `failure`, `fail`, `missing`, `danger`, `error`, `bug`, `example`, `quote`, `cite`.
-* **Quick Inserter Command**: `Obsidian Notes: Insert Obsidian Callout / Admonition` (`Ctrl+Alt+C` / `Cmd+Alt+C`). Interactive QuickPick to choose callout category, custom title, and foldability (`+` expanded, `-` collapsed, or normal).
+* **Quick Inserter Command**: `MarkGarden: Insert Obsidian Callout / Admonition` (`Ctrl+Alt+C` / `Cmd+Alt+C`). Interactive QuickPick to choose callout category, custom title, and foldability (`+` expanded, `-` collapsed, or normal).
 * **Editor Styling & Decorations**: Subtle tinted background and accent borders in the markdown editor.
 * **Markdown Preview Rendering**: Full markdown-it integration converting callouts into theme-styled HTML blocks and interactive collapsible `<details><summary>` elements.
 
@@ -169,31 +169,31 @@ Placeholders are resolved at the moment of file creation or insertion relative t
 
 ## Extension Settings
 
-Customize settings inside your `settings.json` (Workspace or User) under the `obsidian-notes` prefix:
+Customize settings inside your `settings.json` (Workspace or User) under the `markgarden` prefix:
 
 | Setting | Type | Default | Description |
 |---|---|---|---|
-| `obsidian-notes.digitalGarden.publishProperty` | `string` | `"publish_external"` | Frontmatter property key used to determine publish status. |
-| `obsidian-notes.digitalGarden.growthProperty` | `string` | `"growth"` | Frontmatter property key used for note growth stages (`seedling` 🌱, `budding` 🌿, `evergreen` 🌲). |
-| `obsidian-notes.digitalGarden.enableDiagnostics` | `boolean` | `true` | Enable editor squiggles and warnings for broken wikilinks and privacy leaks. |
-| `obsidian-notes.digitalGarden.showStatusBar` | `boolean` | `true` | Show interactive Growth Stage and Publish Status indicators in the status bar. |
-| `obsidian-notes.callouts.enableDecorations` | `boolean` | `true` | Highlight Obsidian Callouts in the editor with custom background tint and border accents. |
-| `obsidian-notes.frontmatter.enableCompletions` | `boolean` | `true` | Enable context-aware IntelliSense completions in YAML frontmatter. |
-| `obsidian-notes.frontmatter.autoUpdateModifiedDate` | `boolean` | `true` | Automatically update last modified timestamp in YAML frontmatter on saving markdown notes. |
-| `obsidian-notes.frontmatter.modifiedDateKey` | `string` | `"updated"` | Frontmatter property key used for auto-updating modified timestamps. |
-| `obsidian-notes.frontmatter.dateFormat` | `string` | `"YYYY-MM-DD HH:mm:ss"` | Date/time format string used when writing timestamps in frontmatter. |
-| `obsidian-notes.frontmatter.defaultProperties` | `array` | `["title", "date", ...]` | Default property keys suggested in frontmatter completion. |
-| `obsidian-notes.hoverPreviewEnabled` | `boolean` | `true` | Show rich markdown preview tooltip when hovering over `[[links]]`, `![[embeds]]`, headings, and blocks. |
-| `obsidian-notes.hoverPreviewMaxLength` | `number` | `1200` | Maximum character length for hover preview body before truncation. |
-| `obsidian-notes.newNoteFolderStrategy` | `string` | `"root"` | Where to create new notes when following a non-existent `[[link]]`: `"root"`, `"sameAsCurrent"`, or `"custom"`. |
-| `obsidian-notes.notesFolder` | `string` | `""` | Destination folder path for new notes when strategy is `"custom"`. |
-| `obsidian-notes.tagPrefix` | `string` | `"frontmatter"` | Default insertion style when adding tags: `"frontmatter"` (YAML frontmatter) or `"inline"` (`#tag` at end of file). |
-| `obsidian-notes.templatesFolder` | `string` | `"templates"` | Path to the templates directory relative to workspace root. |
-| `obsidian-notes.dailyNotesFolder` | `string` | `""` | Path to daily notes folder relative to workspace root. |
-| `obsidian-notes.dailyNoteTemplate` | `string` | `"daily.md"` | Name of the daily note template file. |
-| `obsidian-notes.dateFormat` | `string` | `"YYYY-MM-DD"` | Format for today's daily note filename. |
-| `obsidian-notes.openDailyNoteOnStartup` | `boolean` | `false` | Automatically open or create today's daily note on startup. |
-| `obsidian-notes.excludedFolders` | `array` | `["**/node_modules/**", "**/.git/**", ...]` | Glob patterns to exclude from metadata and tag indexing. |
+| `markgarden.digitalGarden.publishProperty` | `string` | `"publish_external"` | Frontmatter property key used to determine publish status. |
+| `markgarden.digitalGarden.growthProperty` | `string` | `"growth"` | Frontmatter property key used for note growth stages (`seedling` 🌱, `budding` 🌿, `evergreen` 🌲). |
+| `markgarden.digitalGarden.enableDiagnostics` | `boolean` | `true` | Enable editor squiggles and warnings for broken wikilinks and privacy leaks. |
+| `markgarden.digitalGarden.showStatusBar` | `boolean` | `true` | Show interactive Growth Stage and Publish Status indicators in the status bar. |
+| `markgarden.callouts.enableDecorations` | `boolean` | `true` | Highlight Obsidian Callouts in the editor with custom background tint and border accents. |
+| `markgarden.frontmatter.enableCompletions` | `boolean` | `true` | Enable context-aware IntelliSense completions in YAML frontmatter. |
+| `markgarden.frontmatter.autoUpdateModifiedDate` | `boolean` | `true` | Automatically update last modified timestamp in YAML frontmatter on saving markdown notes. |
+| `markgarden.frontmatter.modifiedDateKey` | `string` | `"updated"` | Frontmatter property key used for auto-updating modified timestamps. |
+| `markgarden.frontmatter.dateFormat` | `string` | `"YYYY-MM-DD HH:mm:ss"` | Date/time format string used when writing timestamps in frontmatter. |
+| `markgarden.frontmatter.defaultProperties` | `array` | `["title", "date", ...]` | Default property keys suggested in frontmatter completion. |
+| `markgarden.hoverPreviewEnabled` | `boolean` | `true` | Show rich markdown preview tooltip when hovering over `[[links]]`, `![[embeds]]`, headings, and blocks. |
+| `markgarden.hoverPreviewMaxLength` | `number` | `1200` | Maximum character length for hover preview body before truncation. |
+| `markgarden.newNoteFolderStrategy` | `string` | `"root"` | Where to create new notes when following a non-existent `[[link]]`: `"root"`, `"sameAsCurrent"`, or `"custom"`. |
+| `markgarden.notesFolder` | `string` | `""` | Destination folder path for new notes when strategy is `"custom"`. |
+| `markgarden.tagPrefix` | `string` | `"frontmatter"` | Default insertion style when adding tags: `"frontmatter"` (YAML frontmatter) or `"inline"` (`#tag` at end of file). |
+| `markgarden.templatesFolder` | `string` | `"templates"` | Path to the templates directory relative to workspace root. |
+| `markgarden.dailyNotesFolder` | `string` | `""` | Path to daily notes folder relative to workspace root. |
+| `markgarden.dailyNoteTemplate` | `string` | `"daily.md"` | Name of the daily note template file. |
+| `markgarden.dateFormat` | `string` | `"YYYY-MM-DD"` | Format for today's daily note filename. |
+| `markgarden.openDailyNoteOnStartup` | `boolean` | `false` | Automatically open or create today's daily note on startup. |
+| `markgarden.excludedFolders` | `array` | `["**/node_modules/**", "**/.git/**", ...]` | Glob patterns to exclude from metadata and tag indexing. |
 
 ---
 
@@ -201,20 +201,20 @@ Customize settings inside your `settings.json` (Workspace or User) under the `ob
 
 ### Option 1: Install from VSIX
 
-1. Download the latest `.vsix` package from the [Releases](https://github.com/nichsedge/vscode-obsidian-notes/releases) page.
+1. Download the latest `.vsix` package from the [Releases](https://github.com/nichsedge/vscode-markgarden/releases) page.
 2. Install it in VS Code:
    ```bash
-   code --install-extension obsidian-notes-1.2.0.vsix
+   code --install-extension markgarden-1.2.0.vsix
    ```
    Or open Extensions view (`Ctrl+Shift+X`), click **`...`** (Views and More Actions) > **Install from VSIX...**.
 
 ### Option 2: Build from Source
 
 ```bash
-git clone https://github.com/nichsedge/vscode-obsidian-notes.git
-cd vscode-obsidian-notes
+git clone https://github.com/nichsedge/vscode-markgarden.git
+cd vscode-markgarden
 npm install
 npm test
 npm run package
-code --install-extension obsidian-notes-1.2.0.vsix
+code --install-extension markgarden-1.2.0.vsix
 ```

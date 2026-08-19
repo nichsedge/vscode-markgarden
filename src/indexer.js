@@ -440,7 +440,7 @@ class WorkspaceNotesIndexer {
    */
   _updateConfigCache() {
     try {
-      const config = vscode.workspace.getConfiguration('obsidian-notes');
+      const config = vscode.workspace.getConfiguration('markgarden');
       this._cachedTemplatesFolder = config.get('templatesFolder', 'templates') || 'templates';
       this._cachedExcludeTemplates = config.get('excludeTemplatesFromIndex', true);
     } catch {
@@ -465,7 +465,7 @@ class WorkspaceNotesIndexer {
 
     // Watch for configuration changes that might affect exclusions or folders
     const configDisposable = vscode.workspace.onDidChangeConfiguration(e => {
-      if (e.affectsConfiguration('obsidian-notes')) {
+      if (e.affectsConfiguration('markgarden')) {
         this._updateConfigCache();
         this.rebuildIndex();
       }
@@ -490,7 +490,7 @@ class WorkspaceNotesIndexer {
     this.propertyValueIndex.clear();
     this._invalidateCache();
 
-    const config = vscode.workspace.getConfiguration('obsidian-notes');
+    const config = vscode.workspace.getConfiguration('markgarden');
     const excluded = [...config.get('excludedFolders', [
       '**/node_modules/**',
       '**/.git/**',
@@ -982,7 +982,7 @@ class WorkspaceNotesIndexer {
    */
   getExcludedTags() {
     try {
-      const config = vscode.workspace.getConfiguration('obsidian-notes');
+      const config = vscode.workspace.getConfiguration('markgarden');
       const excluded = config.get('excludedTags', []);
       if (Array.isArray(excluded)) {
         return new Set(excluded.map(t => String(t).replace(/^#/, '').toLowerCase().trim()).filter(Boolean));
@@ -996,7 +996,7 @@ class WorkspaceNotesIndexer {
   /**
    * Get all indexed tags and their note counts.
    * Returns cached sorted results when the index hasn't changed.
-   * @param {boolean} includeExcluded - Whether to include tags configured in obsidian-notes.excludedTags
+   * @param {boolean} includeExcluded - Whether to include tags configured in markgarden.excludedTags
    */
   getAllTags(includeExcluded = false) {
     if (this._cachedTags && !includeExcluded) return this._cachedTags;

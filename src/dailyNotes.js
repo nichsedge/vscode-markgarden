@@ -9,12 +9,12 @@ const { formatDateTime, processTemplate, getWorkspaceFolder } = require('./templ
 async function createDailyNote() {
   const workspaceRoot = getWorkspaceFolder();
   if (!workspaceRoot) {
-    vscode.window.showErrorMessage('Obsidian Notes: Please open a workspace folder first.');
+    vscode.window.showErrorMessage('MarkGarden: Please open a workspace folder first.');
     return;
   }
 
   // Get Configurations
-  const config = vscode.workspace.getConfiguration('obsidian-notes');
+  const config = vscode.workspace.getConfiguration('markgarden');
   const templatesFolder = config.get('templatesFolder', 'templates');
   const dailyNotesFolder = config.get('dailyNotesFolder', '');
   const dailyNoteTemplate = config.get('dailyNoteTemplate', 'daily.md');
@@ -39,7 +39,7 @@ async function createDailyNote() {
   try {
     fs.mkdirSync(dailyNoteDir, { recursive: true });
   } catch (err) {
-    vscode.window.showErrorMessage(`Obsidian Notes: Failed to create daily notes directory: ${err.message}`);
+    vscode.window.showErrorMessage(`MarkGarden: Failed to create daily notes directory: ${err.message}`);
     return;
   }
 
@@ -53,7 +53,7 @@ async function createDailyNote() {
       const templateRaw = fs.readFileSync(templatePath, 'utf8');
       initialContent = processTemplate(templateRaw, dailyNoteName, now);
     } catch (err) {
-      vscode.window.showWarningMessage(`Obsidian Notes: Failed to load/process daily template: ${err.message}`);
+      vscode.window.showWarningMessage(`MarkGarden: Failed to load/process daily template: ${err.message}`);
       initialContent = `# ${dailyNoteName}\n`;
     }
   } else {
@@ -66,9 +66,9 @@ async function createDailyNote() {
     fs.writeFileSync(dailyNotePath, initialContent, 'utf8');
     const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(dailyNotePath));
     await vscode.window.showTextDocument(doc);
-    vscode.window.showInformationMessage(`Obsidian Notes: Created today's daily note: ${dailyNoteFilename}`);
+    vscode.window.showInformationMessage(`MarkGarden: Created today's daily note: ${dailyNoteFilename}`);
   } catch (err) {
-    vscode.window.showErrorMessage(`Obsidian Notes: Failed to write daily note: ${err.message}`);
+    vscode.window.showErrorMessage(`MarkGarden: Failed to write daily note: ${err.message}`);
   }
 }
 

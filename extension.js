@@ -1,16 +1,16 @@
 const vscode = require('vscode');
 const { WorkspaceNotesIndexer } = require('./src/indexer');
 const {
-  ObsidianDocumentLinkProvider,
-  ObsidianDefinitionProvider,
-  ObsidianCompletionItemProvider,
+  MarkGardenDocumentLinkProvider,
+  MarkGardenDefinitionProvider,
+  MarkGardenCompletionItemProvider,
   openLinkAtCursor,
   navigateWikilink
 } = require('./src/wikilinks');
 const {
   TagsTreeDataProvider,
   CategoriesTreeDataProvider,
-  ObsidianHashtagCompletionItemProvider,
+  MarkGardenHashtagCompletionItemProvider,
   addTagCommand,
   removeTagCommand,
   addCategoryCommand,
@@ -24,7 +24,7 @@ const { insertTemplate, formatDateTime, processTemplate, parseTemplateMetadata }
 const { createDailyNote } = require('./src/dailyNotes');
 const { GraphViewManager } = require('./src/graphView');
 const { BacklinksTreeDataProvider, convertUnlinkedMentionToWikilinkCommand } = require('./src/backlinks');
-const { ObsidianHoverProvider } = require('./src/hoverProvider');
+const { MarkGardenHoverProvider } = require('./src/hoverProvider');
 const { extractSelectionToNote } = require('./src/noteRefactor');
 
 const {
@@ -57,7 +57,7 @@ let indexer = null;
 let graphViewManager = null;
 
 /**
- * Activates the Obsidian Notes extension.
+ * Activates the MarkGarden extension.
  */
 async function activate(context) {
   // Initialize Workspace Indexer
@@ -73,12 +73,12 @@ async function activate(context) {
   const markdownSelector = { language: 'markdown', scheme: 'file' };
 
   // Register Language Feature Providers
-  const docLinkProvider = new ObsidianDocumentLinkProvider(indexer);
-  const defProvider = new ObsidianDefinitionProvider(indexer);
-  const wikilinkCompletionProvider = new ObsidianCompletionItemProvider(indexer);
-  const hashtagCompletionProvider = new ObsidianHashtagCompletionItemProvider(indexer);
+  const docLinkProvider = new MarkGardenDocumentLinkProvider(indexer);
+  const defProvider = new MarkGardenDefinitionProvider(indexer);
+  const wikilinkCompletionProvider = new MarkGardenCompletionItemProvider(indexer);
+  const hashtagCompletionProvider = new MarkGardenHashtagCompletionItemProvider(indexer);
   const frontmatterCompletionProvider = new FrontmatterCompletionProvider(indexer);
-  const hoverProvider = new ObsidianHoverProvider(indexer);
+  const hoverProvider = new MarkGardenHoverProvider(indexer);
 
   context.subscriptions.push(
     vscode.languages.registerDocumentLinkProvider(markdownSelector, docLinkProvider),
@@ -131,10 +131,10 @@ async function activate(context) {
   );
 
   context.subscriptions.push(
-    vscode.window.registerTreeDataProvider('obsidian-notes-backlinks', backlinksTreeDataProvider),
-    vscode.window.registerTreeDataProvider('obsidian-notes-tags', tagsTreeDataProvider),
-    vscode.window.registerTreeDataProvider('obsidian-notes-categories', categoriesTreeDataProvider),
-    vscode.window.registerTreeDataProvider('obsidian-notes-digital-garden', digitalGardenTreeDataProvider),
+    vscode.window.registerTreeDataProvider('markgarden-backlinks', backlinksTreeDataProvider),
+    vscode.window.registerTreeDataProvider('markgarden-tags', tagsTreeDataProvider),
+    vscode.window.registerTreeDataProvider('markgarden-categories', categoriesTreeDataProvider),
+    vscode.window.registerTreeDataProvider('markgarden-digital-garden', digitalGardenTreeDataProvider),
     backlinksTreeDataProvider,
     tagsTreeDataProvider,
     categoriesTreeDataProvider,
@@ -147,32 +147,32 @@ async function activate(context) {
   // Register Commands
   const commands = [
     // Daily Notes & Templates
-    vscode.commands.registerCommand('obsidian-notes.createDailyNote', createDailyNote),
-    vscode.commands.registerCommand('obsidian-notes.insertTemplate', insertTemplate),
+    vscode.commands.registerCommand('markgarden.createDailyNote', createDailyNote),
+    vscode.commands.registerCommand('markgarden.insertTemplate', insertTemplate),
 
     // Frontmatter Management
-    vscode.commands.registerCommand('obsidian-notes.addProperty', () => addPropertyCommand(indexer)),
-    vscode.commands.registerCommand('obsidian-notes.formatFrontmatter', () => formatFrontmatterCommand()),
-    vscode.commands.registerCommand('obsidian-notes.renameProperty', () => renamePropertyWorkspaceCommand(indexer)),
-    vscode.commands.registerCommand('obsidian-notes.convertInlineTagsToFrontmatter', () => convertInlineTagsToFrontmatterCommand(indexer)),
-    vscode.commands.registerCommand('obsidian-notes.syncTitleWithFilename', () => syncTitleWithFilenameCommand()),
+    vscode.commands.registerCommand('markgarden.addProperty', () => addPropertyCommand(indexer)),
+    vscode.commands.registerCommand('markgarden.formatFrontmatter', () => formatFrontmatterCommand()),
+    vscode.commands.registerCommand('markgarden.renameProperty', () => renamePropertyWorkspaceCommand(indexer)),
+    vscode.commands.registerCommand('markgarden.convertInlineTagsToFrontmatter', () => convertInlineTagsToFrontmatterCommand(indexer)),
+    vscode.commands.registerCommand('markgarden.syncTitleWithFilename', () => syncTitleWithFilenameCommand()),
 
     // Digital Garden Suite
-    vscode.commands.registerCommand('obsidian-notes.togglePublishStatus', () => togglePublishStatusCommand(indexer, digitalGardenStatusBarManager, digitalGardenTreeDataProvider)),
-    vscode.commands.registerCommand('obsidian-notes.setGrowthStage', () => setGrowthStageCommand(indexer, digitalGardenStatusBarManager, digitalGardenTreeDataProvider)),
-    vscode.commands.registerCommand('obsidian-notes.runGardenAudit', () => runGardenAuditCommand(indexer)),
-    vscode.commands.registerCommand('obsidian-notes.refreshDigitalGarden', () => digitalGardenTreeDataProvider.refresh()),
+    vscode.commands.registerCommand('markgarden.togglePublishStatus', () => togglePublishStatusCommand(indexer, digitalGardenStatusBarManager, digitalGardenTreeDataProvider)),
+    vscode.commands.registerCommand('markgarden.setGrowthStage', () => setGrowthStageCommand(indexer, digitalGardenStatusBarManager, digitalGardenTreeDataProvider)),
+    vscode.commands.registerCommand('markgarden.runGardenAudit', () => runGardenAuditCommand(indexer)),
+    vscode.commands.registerCommand('markgarden.refreshDigitalGarden', () => digitalGardenTreeDataProvider.refresh()),
 
     // Obsidian Callouts
-    vscode.commands.registerCommand('obsidian-notes.insertCallout', () => insertCalloutCommand()),
+    vscode.commands.registerCommand('markgarden.insertCallout', () => insertCalloutCommand()),
 
     // Graph View
-    vscode.commands.registerCommand('obsidian-notes.openGraphView', () => graphViewManager.openGraphView(false)),
-    vscode.commands.registerCommand('obsidian-notes.openLocalGraphView', () => graphViewManager.openGraphView(true)),
+    vscode.commands.registerCommand('markgarden.openGraphView', () => graphViewManager.openGraphView(false)),
+    vscode.commands.registerCommand('markgarden.openLocalGraphView', () => graphViewManager.openGraphView(true)),
 
     // Wikilink Navigation
-    vscode.commands.registerCommand('obsidian-notes.openLinkAtCursor', () => openLinkAtCursor(indexer)),
-    vscode.commands.registerCommand('obsidian-notes.openWikilink', args => {
+    vscode.commands.registerCommand('markgarden.openLinkAtCursor', () => openLinkAtCursor(indexer)),
+    vscode.commands.registerCommand('markgarden.openWikilink', args => {
       if (typeof args === 'string') {
         try {
           args = JSON.parse(args);
@@ -186,42 +186,42 @@ async function activate(context) {
     }),
 
     // Tag Management
-    vscode.commands.registerCommand('obsidian-notes.addTag', () => addTagCommand(indexer)),
-    vscode.commands.registerCommand('obsidian-notes.removeTag', () => removeTagCommand(indexer)),
-    vscode.commands.registerCommand('obsidian-notes.findNotesByTag', () => findNotesByTag(indexer)),
-    vscode.commands.registerCommand('obsidian-notes.renameTag', item => renameTagCommand(indexer, item)),
+    vscode.commands.registerCommand('markgarden.addTag', () => addTagCommand(indexer)),
+    vscode.commands.registerCommand('markgarden.removeTag', () => removeTagCommand(indexer)),
+    vscode.commands.registerCommand('markgarden.findNotesByTag', () => findNotesByTag(indexer)),
+    vscode.commands.registerCommand('markgarden.renameTag', item => renameTagCommand(indexer, item)),
 
     // Category Management
-    vscode.commands.registerCommand('obsidian-notes.addCategory', () => addCategoryCommand(indexer)),
-    vscode.commands.registerCommand('obsidian-notes.removeCategory', () => removeCategoryCommand(indexer)),
-    vscode.commands.registerCommand('obsidian-notes.findNotesByCategory', () => findNotesByCategory(indexer)),
-    vscode.commands.registerCommand('obsidian-notes.renameCategory', item => renameCategoryCommand(indexer, item)),
+    vscode.commands.registerCommand('markgarden.addCategory', () => addCategoryCommand(indexer)),
+    vscode.commands.registerCommand('markgarden.removeCategory', () => removeCategoryCommand(indexer)),
+    vscode.commands.registerCommand('markgarden.findNotesByCategory', () => findNotesByCategory(indexer)),
+    vscode.commands.registerCommand('markgarden.renameCategory', item => renameCategoryCommand(indexer, item)),
 
     // Index & Refresh
-    vscode.commands.registerCommand('obsidian-notes.refreshIndex', () => {
+    vscode.commands.registerCommand('markgarden.refreshIndex', () => {
       indexer.rebuildIndex();
       digitalGardenTreeDataProvider.refresh();
-      vscode.window.showInformationMessage('Obsidian Notes: Refreshed workspace index.');
+      vscode.window.showInformationMessage('MarkGarden: Refreshed workspace index.');
     }),
 
     // Backlinks Management
-    vscode.commands.registerCommand('obsidian-notes.togglePinBacklinks', () => backlinksTreeDataProvider.togglePin()),
-    vscode.commands.registerCommand('obsidian-notes.refreshBacklinks', () => backlinksTreeDataProvider.refresh()),
-    vscode.commands.registerCommand('obsidian-notes.convertUnlinkedMentionToWikilink', item => convertUnlinkedMentionToWikilinkCommand(item, indexer)),
+    vscode.commands.registerCommand('markgarden.togglePinBacklinks', () => backlinksTreeDataProvider.togglePin()),
+    vscode.commands.registerCommand('markgarden.refreshBacklinks', () => backlinksTreeDataProvider.refresh()),
+    vscode.commands.registerCommand('markgarden.convertUnlinkedMentionToWikilink', item => convertUnlinkedMentionToWikilinkCommand(item, indexer)),
 
     // Note Refactor & Zettelkasten Extraction
-    vscode.commands.registerCommand('obsidian-notes.extractSelectionToNote', () => extractSelectionToNote(indexer))
+    vscode.commands.registerCommand('markgarden.extractSelectionToNote', () => extractSelectionToNote(indexer))
   ];
 
   context.subscriptions.push(...commands);
 
   // Check Startup Option
-  const config = vscode.workspace.getConfiguration('obsidian-notes');
+  const config = vscode.workspace.getConfiguration('markgarden');
   const openOnStartup = config.get('openDailyNoteOnStartup', false);
   
   if (openOnStartup) {
     setTimeout(() => {
-      vscode.commands.executeCommand('obsidian-notes.createDailyNote');
+      vscode.commands.executeCommand('markgarden.createDailyNote');
     }, 1000);
   }
 }

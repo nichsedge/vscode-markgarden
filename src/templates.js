@@ -131,22 +131,22 @@ function getWorkspaceFolder() {
 async function insertTemplate() {
   const workspaceRoot = getWorkspaceFolder();
   if (!workspaceRoot) {
-    vscode.window.showErrorMessage('Obsidian Notes: Please open a workspace folder first.');
+    vscode.window.showErrorMessage('MarkGarden: Please open a workspace folder first.');
     return;
   }
 
   const editor = vscode.window.activeTextEditor;
   if (!editor) {
-    vscode.window.showErrorMessage('Obsidian Notes: Please open a markdown file or editor to insert a template.');
+    vscode.window.showErrorMessage('MarkGarden: Please open a markdown file or editor to insert a template.');
     return;
   }
 
-  const config = vscode.workspace.getConfiguration('obsidian-notes');
+  const config = vscode.workspace.getConfiguration('markgarden');
   const templatesFolder = config.get('templatesFolder', 'templates');
   const templatesDir = path.resolve(workspaceRoot, templatesFolder);
 
   if (!fs.existsSync(templatesDir)) {
-    vscode.window.showErrorMessage(`Obsidian Notes: Templates folder not found at "${templatesDir}". Please verify your settings.`);
+    vscode.window.showErrorMessage(`MarkGarden: Templates folder not found at "${templatesDir}". Please verify your settings.`);
     return;
   }
 
@@ -154,12 +154,12 @@ async function insertTemplate() {
   try {
     files = fs.readdirSync(templatesDir).filter(file => file.endsWith('.md'));
   } catch (err) {
-    vscode.window.showErrorMessage(`Obsidian Notes: Failed to read templates directory: ${err.message}`);
+    vscode.window.showErrorMessage(`MarkGarden: Failed to read templates directory: ${err.message}`);
     return;
   }
 
   if (files.length === 0) {
-    vscode.window.showInformationMessage(`Obsidian Notes: No templates (.md) found in "${templatesFolder}".`);
+    vscode.window.showInformationMessage(`MarkGarden: No templates (.md) found in "${templatesFolder}".`);
     return;
   }
 
@@ -212,7 +212,7 @@ async function insertTemplate() {
       editBuilder.insert(editor.selection.active, processedContent);
     });
   } catch (err) {
-    vscode.window.showErrorMessage(`Obsidian Notes: Failed to insert template: ${err.message}`);
+    vscode.window.showErrorMessage(`MarkGarden: Failed to insert template: ${err.message}`);
   }
 }
 

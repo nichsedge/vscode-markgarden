@@ -120,7 +120,7 @@ function test(name, fn) {
   }
 }
 
-console.log('Running Obsidian Notes Unit Tests...\n');
+console.log('Running MarkGarden Unit Tests...\n');
 
 // --- Indexer Tests ---
 console.log('Indexer & Parsers:');

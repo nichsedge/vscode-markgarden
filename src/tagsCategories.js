@@ -255,7 +255,7 @@ class TagsTreeDataProvider {
       const item = new vscode.TreeItem(element.name, vscode.TreeItemCollapsibleState.Collapsed);
       item.iconPath = new vscode.ThemeIcon('tag');
       item.description = `(${element.count})`;
-      item.contextValue = 'obsidianTag';
+      item.contextValue = 'markgardenTag';
       return item;
     } else if (element.type === 'note') {
       const item = new vscode.TreeItem(element.name, vscode.TreeItemCollapsibleState.None);
@@ -266,7 +266,7 @@ class TagsTreeDataProvider {
         title: 'Open Note',
         arguments: [vscode.Uri.file(element.filePath)]
       };
-      item.contextValue = 'obsidianTagNote';
+      item.contextValue = 'markgardenTagNote';
       return item;
     }
   }
@@ -324,7 +324,7 @@ class CategoriesTreeDataProvider {
       const item = new vscode.TreeItem(element.name, vscode.TreeItemCollapsibleState.Collapsed);
       item.iconPath = new vscode.ThemeIcon('folder');
       item.description = `(${element.count})`;
-      item.contextValue = 'obsidianCategory';
+      item.contextValue = 'markgardenCategory';
       return item;
     } else if (element.type === 'note') {
       const item = new vscode.TreeItem(element.name, vscode.TreeItemCollapsibleState.None);
@@ -335,7 +335,7 @@ class CategoriesTreeDataProvider {
         title: 'Open Note',
         arguments: [vscode.Uri.file(element.filePath)]
       };
-      item.contextValue = 'obsidianCategoryNote';
+      item.contextValue = 'markgardenCategoryNote';
       return item;
     }
   }
@@ -372,7 +372,7 @@ class CategoriesTreeDataProvider {
 /**
  * Suggests workspace #tags when typing # in markdown notes.
  */
-class ObsidianHashtagCompletionItemProvider {
+class MarkGardenHashtagCompletionItemProvider {
   constructor(indexer) {
     this.indexer = indexer;
   }
@@ -412,7 +412,7 @@ class ObsidianHashtagCompletionItemProvider {
 async function addTagCommand(indexer) {
   const editor = vscode.window.activeTextEditor;
   if (!editor || editor.document.languageId !== 'markdown') {
-    vscode.window.showErrorMessage('Obsidian Notes: Please open a markdown file first.');
+    vscode.window.showErrorMessage('MarkGarden: Please open a markdown file first.');
     return;
   }
 
@@ -426,7 +426,7 @@ async function addTagCommand(indexer) {
   if (!tagInput) return;
   const tag = tagInput.trim().replace(/^#/, '');
 
-  const config = vscode.workspace.getConfiguration('obsidian-notes');
+  const config = vscode.workspace.getConfiguration('markgarden');
   const tagPrefix = config.get('tagPrefix', 'frontmatter');
   const isInline = tagPrefix === 'inline';
 
@@ -442,7 +442,7 @@ async function addTagCommand(indexer) {
     editBuilder.replace(fullRange, newContent);
   });
 
-  vscode.window.showInformationMessage(`Obsidian Notes: Added tag "#${tag}".`);
+  vscode.window.showInformationMessage(`MarkGarden: Added tag "#${tag}".`);
 }
 
 /**
@@ -451,7 +451,7 @@ async function addTagCommand(indexer) {
 async function removeTagCommand(indexer) {
   const editor = vscode.window.activeTextEditor;
   if (!editor || editor.document.languageId !== 'markdown') {
-    vscode.window.showErrorMessage('Obsidian Notes: Please open a markdown file first.');
+    vscode.window.showErrorMessage('MarkGarden: Please open a markdown file first.');
     return;
   }
 
@@ -459,7 +459,7 @@ async function removeTagCommand(indexer) {
   const tags = meta ? Array.from(meta.tags) : [];
 
   if (tags.length === 0) {
-    vscode.window.showInformationMessage('Obsidian Notes: No tags found in the current note.');
+    vscode.window.showInformationMessage('MarkGarden: No tags found in the current note.');
     return;
   }
 
@@ -481,7 +481,7 @@ async function removeTagCommand(indexer) {
     editBuilder.replace(fullRange, newContent);
   });
 
-  vscode.window.showInformationMessage(`Obsidian Notes: Removed tag "#${selected}".`);
+  vscode.window.showInformationMessage(`MarkGarden: Removed tag "#${selected}".`);
 }
 
 /**
@@ -490,7 +490,7 @@ async function removeTagCommand(indexer) {
 async function addCategoryCommand(indexer) {
   const editor = vscode.window.activeTextEditor;
   if (!editor || editor.document.languageId !== 'markdown') {
-    vscode.window.showErrorMessage('Obsidian Notes: Please open a markdown file first.');
+    vscode.window.showErrorMessage('MarkGarden: Please open a markdown file first.');
     return;
   }
 
@@ -516,7 +516,7 @@ async function addCategoryCommand(indexer) {
     editBuilder.replace(fullRange, newContent);
   });
 
-  vscode.window.showInformationMessage(`Obsidian Notes: Added category "${category}".`);
+  vscode.window.showInformationMessage(`MarkGarden: Added category "${category}".`);
 }
 
 /**
@@ -525,7 +525,7 @@ async function addCategoryCommand(indexer) {
 async function removeCategoryCommand(indexer) {
   const editor = vscode.window.activeTextEditor;
   if (!editor || editor.document.languageId !== 'markdown') {
-    vscode.window.showErrorMessage('Obsidian Notes: Please open a markdown file first.');
+    vscode.window.showErrorMessage('MarkGarden: Please open a markdown file first.');
     return;
   }
 
@@ -533,7 +533,7 @@ async function removeCategoryCommand(indexer) {
   const categories = meta ? Array.from(meta.categories) : [];
 
   if (categories.length === 0) {
-    vscode.window.showInformationMessage('Obsidian Notes: No categories found in the current note.');
+    vscode.window.showInformationMessage('MarkGarden: No categories found in the current note.');
     return;
   }
 
@@ -555,7 +555,7 @@ async function removeCategoryCommand(indexer) {
     editBuilder.replace(fullRange, newContent);
   });
 
-  vscode.window.showInformationMessage(`Obsidian Notes: Removed category "${selected}".`);
+  vscode.window.showInformationMessage(`MarkGarden: Removed category "${selected}".`);
 }
 
 /**
@@ -564,7 +564,7 @@ async function removeCategoryCommand(indexer) {
 async function findNotesByTag(indexer) {
   const tags = indexer.getAllTags();
   if (tags.length === 0) {
-    vscode.window.showInformationMessage('Obsidian Notes: No tags indexed in workspace.');
+    vscode.window.showInformationMessage('MarkGarden: No tags indexed in workspace.');
     return;
   }
 
@@ -605,7 +605,7 @@ async function findNotesByTag(indexer) {
 async function findNotesByCategory(indexer) {
   const categories = indexer.getAllCategories();
   if (categories.length === 0) {
-    vscode.window.showInformationMessage('Obsidian Notes: No categories indexed in workspace.');
+    vscode.window.showInformationMessage('MarkGarden: No categories indexed in workspace.');
     return;
   }
 
@@ -649,7 +649,7 @@ async function renameTagCommand(indexer, treeItem) {
   if (!targetTag) {
     const tags = indexer.getAllTags();
     if (tags.length === 0) {
-      vscode.window.showInformationMessage('Obsidian Notes: No tags found to rename.');
+      vscode.window.showInformationMessage('MarkGarden: No tags found to rename.');
       return;
     }
 
@@ -681,7 +681,7 @@ async function renameTagCommand(indexer, treeItem) {
 
   const files = indexer.tagIndex.get(targetTag);
   if (!files || files.size === 0) {
-    vscode.window.showInformationMessage(`Obsidian Notes: No files found with tag #${targetTag}.`);
+    vscode.window.showInformationMessage(`MarkGarden: No files found with tag #${targetTag}.`);
     return;
   }
 
@@ -699,15 +699,15 @@ async function renameTagCommand(indexer, treeItem) {
         workspaceEdit.replace(uri, fullRange, modifiedText);
       }
     } catch (err) {
-      vscode.window.showErrorMessage(`Obsidian Notes: Failed to prepare rename for ${filePath}: ${err.message}`);
+      vscode.window.showErrorMessage(`MarkGarden: Failed to prepare rename for ${filePath}: ${err.message}`);
     }
   }
 
   const success = await vscode.workspace.applyEdit(workspaceEdit);
   if (success) {
-    vscode.window.showInformationMessage(`Obsidian Notes: Renamed #${targetTag} to #${newTag} across ${files.size} notes.`);
+    vscode.window.showInformationMessage(`MarkGarden: Renamed #${targetTag} to #${newTag} across ${files.size} notes.`);
   } else {
-    vscode.window.showErrorMessage(`Obsidian Notes: Failed to apply batch rename for #${targetTag}.`);
+    vscode.window.showErrorMessage(`MarkGarden: Failed to apply batch rename for #${targetTag}.`);
   }
 }
 
@@ -720,7 +720,7 @@ async function renameCategoryCommand(indexer, treeItem) {
   if (!targetCategory) {
     const categories = indexer.getAllCategories();
     if (categories.length === 0) {
-      vscode.window.showInformationMessage('Obsidian Notes: No categories found to rename.');
+      vscode.window.showInformationMessage('MarkGarden: No categories found to rename.');
       return;
     }
 
@@ -752,7 +752,7 @@ async function renameCategoryCommand(indexer, treeItem) {
 
   const files = indexer.categoryIndex.get(targetCategory);
   if (!files || files.size === 0) {
-    vscode.window.showInformationMessage(`Obsidian Notes: No files found with category "${targetCategory}".`);
+    vscode.window.showInformationMessage(`MarkGarden: No files found with category "${targetCategory}".`);
     return;
   }
 
@@ -770,22 +770,22 @@ async function renameCategoryCommand(indexer, treeItem) {
         workspaceEdit.replace(uri, fullRange, modifiedText);
       }
     } catch (err) {
-      vscode.window.showErrorMessage(`Obsidian Notes: Failed to prepare rename for ${filePath}: ${err.message}`);
+      vscode.window.showErrorMessage(`MarkGarden: Failed to prepare rename for ${filePath}: ${err.message}`);
     }
   }
 
   const success = await vscode.workspace.applyEdit(workspaceEdit);
   if (success) {
-    vscode.window.showInformationMessage(`Obsidian Notes: Renamed category "${targetCategory}" to "${newCategory}" across ${files.size} notes.`);
+    vscode.window.showInformationMessage(`MarkGarden: Renamed category "${targetCategory}" to "${newCategory}" across ${files.size} notes.`);
   } else {
-    vscode.window.showErrorMessage(`Obsidian Notes: Failed to apply batch rename for "${targetCategory}".`);
+    vscode.window.showErrorMessage(`MarkGarden: Failed to apply batch rename for "${targetCategory}".`);
   }
 }
 
 module.exports = {
   TagsTreeDataProvider,
   CategoriesTreeDataProvider,
-  ObsidianHashtagCompletionItemProvider,
+  MarkGardenHashtagCompletionItemProvider,
   addTagCommand,
   removeTagCommand,
   addCategoryCommand,

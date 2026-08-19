@@ -397,7 +397,7 @@ class DigitalGardenTreeDataProvider {
 
   getAudit() {
     if (!this.cachedAudit) {
-      const config = vscode.workspace.getConfiguration('obsidian-notes');
+      const config = vscode.workspace.getConfiguration('markgarden');
       this.cachedAudit = auditGarden(this.indexer, {
         growthProperty: config.get('digitalGarden.growthProperty', 'growth'),
         publishProperty: config.get('digitalGarden.publishProperty', 'publish_external')
@@ -626,8 +626,8 @@ class DigitalGardenStatusBarManager {
     this.growthStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 102);
     this.publishStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 101);
 
-    this.growthStatusBarItem.command = 'obsidian-notes.setGrowthStage';
-    this.publishStatusBarItem.command = 'obsidian-notes.togglePublishStatus';
+    this.growthStatusBarItem.command = 'markgarden.setGrowthStage';
+    this.publishStatusBarItem.command = 'markgarden.togglePublishStatus';
 
     this.update();
   }
@@ -640,7 +640,7 @@ class DigitalGardenStatusBarManager {
       return;
     }
 
-    const config = vscode.workspace.getConfiguration('obsidian-notes');
+    const config = vscode.workspace.getConfiguration('markgarden');
     const showStatusBar = config.get('digitalGarden.showStatusBar', true);
     if (!showStatusBar) {
       this.growthStatusBarItem.hide();
@@ -688,7 +688,7 @@ class DigitalGardenStatusBarManager {
 class DigitalGardenDiagnosticsProvider {
   constructor(indexer) {
     this.indexer = indexer;
-    this.diagnosticCollection = vscode.languages.createDiagnosticCollection('obsidian-notes-garden');
+    this.diagnosticCollection = vscode.languages.createDiagnosticCollection('markgarden-garden');
     this.timeout = null;
   }
 
@@ -697,7 +697,7 @@ class DigitalGardenDiagnosticsProvider {
       return;
     }
 
-    const config = vscode.workspace.getConfiguration('obsidian-notes');
+    const config = vscode.workspace.getConfiguration('markgarden');
     const enableDiagnostics = config.get('digitalGarden.enableDiagnostics', true);
 
     if (!enableDiagnostics) {
@@ -738,7 +738,7 @@ class DigitalGardenDiagnosticsProvider {
         // Broken link
         const diag = new vscode.Diagnostic(
           range,
-          `Obsidian Notes: Wikilink target "${linkTarget}" not found in workspace.`,
+          `MarkGarden: Wikilink target "${linkTarget}" not found in workspace.`,
           vscode.DiagnosticSeverity.Warning
         );
         diag.source = 'Digital Garden Doctor';
@@ -751,7 +751,7 @@ class DigitalGardenDiagnosticsProvider {
           const targetTitle = resolved.title || path.basename(resolved.filePath, '.md');
           const diag = new vscode.Diagnostic(
             range,
-            `Obsidian Notes: Privacy Leak — Public note links to private note "${targetTitle}".`,
+            `MarkGarden: Privacy Leak — Public note links to private note "${targetTitle}".`,
             vscode.DiagnosticSeverity.Warning
           );
           diag.source = 'Digital Garden Doctor';
@@ -796,11 +796,11 @@ class DigitalGardenDiagnosticsProvider {
 async function togglePublishStatusCommand(indexer, statusBarManager, treeDataProvider) {
   const editor = vscode.window.activeTextEditor;
   if (!editor || editor.document.languageId !== 'markdown') {
-    vscode.window.showWarningMessage('Obsidian Notes: Open a markdown note to toggle its publish status.');
+    vscode.window.showWarningMessage('MarkGarden: Open a markdown note to toggle its publish status.');
     return;
   }
 
-  const config = vscode.workspace.getConfiguration('obsidian-notes');
+  const config = vscode.workspace.getConfiguration('markgarden');
   const publishProperty = config.get('digitalGarden.publishProperty', 'publish_external');
   const filePath = editor.document.fileName;
   const noteData = getNoteMeta(indexer, filePath);
@@ -825,7 +825,7 @@ async function togglePublishStatusCommand(indexer, statusBarManager, treeDataPro
   if (treeDataProvider) treeDataProvider.refresh();
 
   vscode.window.showInformationMessage(
-    `Obsidian Notes: Note set to ${newStatus ? '📢 Published' : '🔒 Private'} (${publishProperty}: ${newStatus}).`
+    `MarkGarden: Note set to ${newStatus ? '📢 Published' : '🔒 Private'} (${publishProperty}: ${newStatus}).`
   );
 }
 
@@ -835,7 +835,7 @@ async function togglePublishStatusCommand(indexer, statusBarManager, treeDataPro
 async function setGrowthStageCommand(indexer, statusBarManager, treeDataProvider) {
   const editor = vscode.window.activeTextEditor;
   if (!editor || editor.document.languageId !== 'markdown') {
-    vscode.window.showWarningMessage('Obsidian Notes: Open a markdown note to change its growth stage.');
+    vscode.window.showWarningMessage('MarkGarden: Open a markdown note to change its growth stage.');
     return;
   }
 
@@ -851,7 +851,7 @@ async function setGrowthStageCommand(indexer, statusBarManager, treeDataProvider
 
   if (!selected) return;
 
-  const config = vscode.workspace.getConfiguration('obsidian-notes');
+  const config = vscode.workspace.getConfiguration('markgarden');
   const growthProperty = config.get('digitalGarden.growthProperty', 'growth');
   const filePath = editor.document.fileName;
 
@@ -872,14 +872,14 @@ async function setGrowthStageCommand(indexer, statusBarManager, treeDataProvider
   if (statusBarManager) statusBarManager.update();
   if (treeDataProvider) treeDataProvider.refresh();
 
-  vscode.window.showInformationMessage(`Obsidian Notes: Growth stage set to ${selected.label}.`);
+  vscode.window.showInformationMessage(`MarkGarden: Growth stage set to ${selected.label}.`);
 }
 
 /**
  * Command: Run Garden Audit and Display Summary
  */
 async function runGardenAuditCommand(indexer) {
-  const config = vscode.workspace.getConfiguration('obsidian-notes');
+  const config = vscode.workspace.getConfiguration('markgarden');
   const audit = auditGarden(indexer, {
     growthProperty: config.get('digitalGarden.growthProperty', 'growth'),
     publishProperty: config.get('digitalGarden.publishProperty', 'publish_external')

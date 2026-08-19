@@ -86,13 +86,13 @@ function formatFileSize(bytes) {
 /**
  * HoverProvider that displays instant rich markdown previews for [[wikilinks]], ![[embeds]], #headings, ^block-ids, and media attachments.
  */
-class ObsidianHoverProvider {
+class MarkGardenHoverProvider {
   constructor(indexer) {
     this.indexer = indexer;
   }
 
   provideHover(document, position) {
-    const config = vscode.workspace.getConfiguration('obsidian-notes');
+    const config = vscode.workspace.getConfiguration('markgarden');
     const enabled = config.get('hoverPreviewEnabled', true);
     if (!enabled) return null;
 
@@ -129,7 +129,7 @@ class ObsidianHoverProvider {
             target: link.target,
             sourceFile: document.fileName
           }));
-          md.appendMarkdown(`### 📄 **${path.basename(mediaPath)}**${sizeStr}\n\n*Media attachment*\n\n[▶️ Open File](command:obsidian-notes.openWikilink?${commandArgs})`);
+          md.appendMarkdown(`### 📄 **${path.basename(mediaPath)}**${sizeStr}\n\n*Media attachment*\n\n[▶️ Open File](command:markgarden.openWikilink?${commandArgs})`);
         }
       } else {
         md.appendMarkdown(`### 🖼️ **${parsed.targetNote}**\n\n*Media file not found in workspace.*`);
@@ -152,7 +152,7 @@ class ObsidianHoverProvider {
         target: link.target,
         sourceFile: document.fileName
       }));
-      md.appendMarkdown(`### 📝 **${noteName}**\n\n*Note does not exist yet.*\n\n[➕ Create Note](command:obsidian-notes.openWikilink?${commandArgs})`);
+      md.appendMarkdown(`### 📝 **${noteName}**\n\n*Note does not exist yet.*\n\n[➕ Create Note](command:markgarden.openWikilink?${commandArgs})`);
       return new vscode.Hover(md, link.range);
     }
 
@@ -168,7 +168,7 @@ class ObsidianHoverProvider {
 }
 
 module.exports = {
-  ObsidianHoverProvider,
+  MarkGardenHoverProvider,
   buildNotePreviewMarkdown,
   stripFrontmatter
 };
