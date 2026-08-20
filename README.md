@@ -1,5 +1,7 @@
 # MarkGarden VS Code Extension
 
+![alt text](image.png)
+
 An elegant and high-performance VS Code extension that brings Obsidian's premium note-taking workflows directly into your editor: **Interactive Graph View**, **Wikilinks Navigation (`[[ ]]`)**, **Tag & Category Management**, **Daily Notes**, and **Smart Template Insertion**. Perfect for Quartz users, markdown journalers, and digital gardeners.
 
 ---
