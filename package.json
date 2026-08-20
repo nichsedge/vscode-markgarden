@@ -2,7 +2,7 @@
   "name": "markgarden",
   "displayName": "MarkGarden: Digital Garden & PKM",
   "description": "Obsidian-like daily notes, template insertion, Wikilinks navigation, category/tag management, and interactive graph view for digital garden workspaces.",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "publisher": "al",
   "author": {
     "name": "Al"
@@ -516,4 +516,3 @@
     }
   }
 }
-

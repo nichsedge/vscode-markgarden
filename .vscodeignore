@@ -7,3 +7,6 @@ tsconfig.json
 jsconfig.json
 test/**
 vsc-extension-quickstart.md
+.agents/**
+.github/**
+AGENTS.md
