@@ -407,18 +407,23 @@ test('getBacklinksForFile returns linking notes and line snippets', async () => 
   assert.strictEqual(backlinks[0].snippets[0].lineText, 'Check [[Target Note]] on line 2.');
 });
 
-test('getUnlinkedMentionsForFile detects title and alias mentions', async () => {
+test('getUnlinkedMentionsForFile detects title and alias mentions with accurate line numbers', async () => {
   const indexer = new WorkspaceNotesIndexer();
-  indexer.indexFileContent('/workspace/target.md', `---\ntitle: "Target Note"\naliases: [Special Alias]\n---\nMain target.`);
-  indexer.indexFileContent('/workspace/mention.md', `I am talking about Target Note in plain text.\nAlso using Special Alias here.`);
+  indexer.indexFileContent('/workspace/target.md', `---\ntitle: "Target Note"\naliases: [Special Alias, Sam Altman]\n---\nMain target.`);
+  indexer.indexFileContent('/workspace/mention.md', `---\ntitle: Mention Doc\ntags: [a, b]\n---\n\nI am talking about Target Note in plain text.\nAlso using Special Alias here.\nLine with Sam Altman.`);
   indexer.indexFileContent('/workspace/existing.md', `Already linked: [[Target Note]].`);
 
   const unlinked = await indexer.getUnlinkedMentionsForFile('/workspace/target.md');
   assert.strictEqual(unlinked.length, 1);
   assert.strictEqual(unlinked[0].sourceFilePath, '/workspace/mention.md');
-  assert.strictEqual(unlinked[0].mentions.length, 2);
+  assert.strictEqual(unlinked[0].mentions.length, 3);
   assert.strictEqual(unlinked[0].mentions[0].term, 'Target Note');
+  assert.strictEqual(unlinked[0].mentions[0].line, 5);
   assert.strictEqual(unlinked[0].mentions[1].term, 'Special Alias');
+  assert.strictEqual(unlinked[0].mentions[1].line, 6);
+  assert.strictEqual(unlinked[0].mentions[2].term, 'Sam Altman');
+  assert.strictEqual(unlinked[0].mentions[2].line, 7);
+  assert.strictEqual(unlinked[0].mentions[2].targetNote, 'target');
 });
 
 // --- Block References & Section Extraction Tests ---

@@ -346,8 +346,8 @@ function findPrimaryDocHeading(content, headings) {
  */
 function extractWikilinks(content) {
   // Mask frontmatter, code blocks, and comments with spaces to preserve line numbers and character offsets
-  let sanitized = content.replace(/^---\r?\n[\s\S]*?\r?\n---|```[\s\S]*?```|~~~[\s\S]*?~~~|<!--[\s\S]*?-->/g, m => ' '.repeat(m.length));
-  sanitized = sanitized.replace(/`[^`\r\n]+`/g, m => ' '.repeat(m.length));
+  let sanitized = content.replace(/^---\r?\n[\s\S]*?\r?\n---|```[\s\S]*?```|~~~[\s\S]*?~~~|<!--[\s\S]*?-->/g, m => m.replace(/[^\r\n]/g, ' '));
+  sanitized = sanitized.replace(/`[^`\r\n]+`/g, m => m.replace(/[^\r\n]/g, ' '));
 
   const links = [];
   const regex = /(!?\[\[)([^[\r\n\]]+)\]\]/g;
@@ -380,8 +380,9 @@ function extractWikilinks(content) {
  * Extracts outbound media file targets (images, PDFs, audio/video) from wikilinks and markdown embeds.
  */
 function extractMediaLinks(content) {
-  let sanitized = content.replace(/^---\r?\n[\s\S]*?\r?\n---|```[\s\S]*?```|~~~[\s\S]*?~~~|<!--[\s\S]*?-->/g, m => ' '.repeat(m.length));
-  sanitized = sanitized.replace(/`[^`\r\n]+`/g, m => ' '.repeat(m.length));
+  // Mask frontmatter, code blocks, and comments with spaces while preserving newlines for accurate line numbers and offsets
+  let sanitized = content.replace(/^---\r?\n[\s\S]*?\r?\n---|```[\s\S]*?```|~~~[\s\S]*?~~~|<!--[\s\S]*?-->/g, m => m.replace(/[^\r\n]/g, ' '));
+  sanitized = sanitized.replace(/`[^`\r\n]+`/g, m => m.replace(/[^\r\n]/g, ' '));
 
   const mediaList = [];
   const regex = /(!?\[\[)([^[\r\n\]]+)\]\]|(!?\[[^\]]*\]\(([^)\r\n]+)\))/g;
@@ -1349,10 +1350,10 @@ class WorkspaceNotesIndexer {
         }
       }
 
-      let sanitized = content.replace(/^---\r?\n[\s\S]*?\r?\n---|```[\s\S]*?```|~~~[\s\S]*?~~~|<!--[\s\S]*?-->/g, m => ' '.repeat(m.length));
-      sanitized = sanitized.replace(/`[^`\r\n]+`/g, m => ' '.repeat(m.length));
-      sanitized = sanitized.replace(/\[\[[^[\r\n\]]+\]\]/g, m => ' '.repeat(m.length));
-      sanitized = sanitized.replace(/^[ \t]*#{1,6}[ \t]+.*$/gm, m => ' '.repeat(m.length));
+      let sanitized = content.replace(/^---\r?\n[\s\S]*?\r?\n---|```[\s\S]*?```|~~~[\s\S]*?~~~|<!--[\s\S]*?-->/g, m => m.replace(/[^\r\n]/g, ' '));
+      sanitized = sanitized.replace(/`[^`\r\n]+`/g, m => m.replace(/[^\r\n]/g, ' '));
+      sanitized = sanitized.replace(/\[\[[^[\r\n\]]+\]\]/g, m => m.replace(/[^\r\n]/g, ' '));
+      sanitized = sanitized.replace(/^[ \t]*#{1,6}[ \t]+.*$/gm, m => m.replace(/[^\r\n]/g, ' '));
 
       const originalLines = content.split(/\r?\n/);
       const sanitizedLines = sanitized.split(/\r?\n/);

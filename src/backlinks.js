@@ -258,18 +258,33 @@ async function convertUnlinkedMentionToWikilinkCommand(item, indexer) {
     const doc = await vscode.workspace.openTextDocument(filePath);
     const editor = await vscode.window.showTextDocument(doc);
 
-    const lineText = doc.lineAt(line).text;
+    let targetLine = line;
     const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const regex = new RegExp(`\\b${escaped}\\b`, 'i');
-    const match = regex.exec(lineText);
+    let match = null;
+
+    if (targetLine >= 0 && targetLine < doc.lineCount) {
+      match = regex.exec(doc.lineAt(targetLine).text);
+    }
 
     if (!match) {
-      vscode.window.showWarningMessage(`Could not locate mention "${term}" on line ${line + 1}.`);
+      for (let i = 0; i < doc.lineCount; i++) {
+        const m = regex.exec(doc.lineAt(i).text);
+        if (m) {
+          match = m;
+          targetLine = i;
+          break;
+        }
+      }
+    }
+
+    if (!match) {
+      vscode.window.showWarningMessage(`Could not locate mention "${term}" in ${path.basename(filePath)}.`);
       return;
     }
 
-    const startPos = new vscode.Position(line, match.index);
-    const endPos = new vscode.Position(line, match.index + match[0].length);
+    const startPos = new vscode.Position(targetLine, match.index);
+    const endPos = new vscode.Position(targetLine, match.index + match[0].length);
 
     let replacement;
     if (term.toLowerCase() === targetNote.toLowerCase()) {
