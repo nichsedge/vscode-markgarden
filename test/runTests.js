@@ -13,6 +13,8 @@ Module.prototype.require = function(path) {
       },
       Position: class { constructor(line, character) { this.line = line; this.character = character; } },
       Range: class { constructor(start, end) { this.start = start; this.end = end; } },
+      Location: class { constructor(uri, rangeOrPosition) { this.uri = uri; this.range = rangeOrPosition; } },
+      DocumentLink: class { constructor(range, target) { this.range = range; this.target = target; this.tooltip = ''; } },
       CompletionItem: class { constructor(label, kind) { this.label = label; this.kind = kind; this.insertText = label; } },
       CompletionItemKind: { Property: 9, Keyword: 13, Folder: 18, Reference: 17, Value: 11, EnumMember: 19 },
       SnippetString: class { constructor(val) { this.value = val; } },
@@ -89,6 +91,10 @@ const {
   updateModifiedDateInMarkdown,
   FrontmatterCompletionProvider
 } = require('../src/frontmatter');
+const {
+  MarkGardenDocumentLinkProvider,
+  MarkGardenCompletionItemProvider
+} = require('../src/wikilinks');
 
 const {
   detectGrowthStage,
@@ -1064,6 +1070,120 @@ test('markdownItCalloutsPlugin transforms callouts into styled HTML containers a
   assert.strictEqual(htmlCollapsible.startsWith('<details'), true);
   assert.strictEqual(htmlCollapsible.includes('open'), true);
   assert.strictEqual(htmlCollapsible.includes('Custom Tip'), true);
+});
+
+// --- Dynamic Indexing & Autocompletion Tests ---
+console.log('\nDynamic Indexing & Auto-Hint Synchronization:');
+
+test('WorkspaceNotesIndexer handles real-time file rename, title updates, and removes stale entries', () => {
+  const indexer = new WorkspaceNotesIndexer();
+  const oldPath = '/vault/Old Note.md';
+  const newPath = '/vault/New Note.md';
+
+  indexer.indexFileContent(oldPath, '---\ntitle: "Old Title"\naliases: ["Legacy Alias"]\n---\nContent');
+
+  assert.strictEqual(indexer.resolveNotePath('Old Note'), oldPath);
+  assert.strictEqual(indexer.resolveNotePath('Old Title'), oldPath);
+  assert.strictEqual(indexer.resolveNotePath('Legacy Alias'), oldPath);
+
+  // Perform rename
+  indexer.handleFileRename(oldPath, newPath);
+  indexer.indexFileContent(newPath, '---\ntitle: "New Title"\naliases: ["Fresh Alias"]\n---\nContent');
+
+  // Old references must be completely gone (not stale)
+  assert.strictEqual(indexer.resolveNotePath('Old Note'), null);
+  assert.strictEqual(indexer.resolveNotePath('Old Title'), null);
+  assert.strictEqual(indexer.resolveNotePath('Legacy Alias'), null);
+
+  // New references must resolve cleanly
+  assert.strictEqual(indexer.resolveNotePath('New Note'), newPath);
+  assert.strictEqual(indexer.resolveNotePath('New Title'), newPath);
+  assert.strictEqual(indexer.resolveNotePath('Fresh Alias'), newPath);
+
+  // Also test note with primary heading (no frontmatter title)
+  const h1Path = '/vault/Heading Note.md';
+  indexer.indexFileContent(h1Path, '# Primary Header Note\n\nSome text');
+  assert.strictEqual(indexer.resolveNotePath('Primary Header Note'), h1Path);
+
+  // Update content of heading note (heading changed)
+  indexer.indexFileContent(h1Path, '# Updated Header Note\n\nSome text');
+  assert.strictEqual(indexer.resolveNotePath('Primary Header Note'), null);
+  assert.strictEqual(indexer.resolveNotePath('Updated Header Note'), h1Path);
+});
+
+test('WorkspaceNotesIndexer handles real-time media file addition, deletion, and retrieval', () => {
+  const indexer = new WorkspaceNotesIndexer();
+  const imagePath = '/vault/attachments/diagram.png';
+
+  indexer.handleFileChange(imagePath);
+  assert.strictEqual(indexer.resolveMediaPath('diagram.png'), imagePath);
+  assert.strictEqual(indexer.getAllMediaFiles().some(m => m.baseName === 'diagram.png'), true);
+
+  indexer.handleFileDelete(imagePath);
+  assert.strictEqual(indexer.resolveMediaPath('diagram.png'), null);
+  assert.strictEqual(indexer.getAllMediaFiles().some(m => m.baseName === 'diagram.png'), false);
+});
+
+test('MarkGardenCompletionItemProvider provides live autocompletions for active note titles, aliases, headings, and blocks', () => {
+  const indexer = new WorkspaceNotesIndexer();
+  indexer.indexFileContent('/vault/Alpha.md', '---\ntitle: "Alpha Note"\naliases: ["Alpha Alias"]\n---\n# Topic A\nSome text ^block1');
+  indexer.handleFileChange('/vault/diagram.png');
+
+  const provider = new MarkGardenCompletionItemProvider(indexer);
+
+  // 1. Note title completion inside [[
+  const mockDoc = {
+    fileName: '/vault/Beta.md',
+    lineAt: () => ({ text: 'Link to [[' }),
+    getText: () => 'Link to [['
+  };
+  const items = provider.provideCompletionItems(mockDoc, { line: 0, character: 11 });
+  assert.strictEqual(items.some(i => i.label === 'Alpha'), true);
+  assert.strictEqual(items.some(i => i.label === 'Alpha Note'), true);
+  assert.strictEqual(items.some(i => i.label === 'Alpha Alias'), true);
+  assert.strictEqual(items.some(i => i.label === 'diagram.png'), true);
+
+  // 2. Heading completion inside [[Alpha#
+  const mockHeadingDoc = {
+    fileName: '/vault/Beta.md',
+    lineAt: () => ({ text: 'Link to [[Alpha#' }),
+    getText: () => 'Link to [[Alpha#'
+  };
+  const headingItems = provider.provideCompletionItems(mockHeadingDoc, { line: 0, character: 16 });
+  assert.strictEqual(headingItems.some(i => i.label === 'Topic A'), true);
+
+  // 3. Block reference completion inside [[Alpha#^
+  const mockBlockDoc = {
+    fileName: '/vault/Beta.md',
+    lineAt: () => ({ text: 'Link to [[Alpha#^' }),
+    getText: () => 'Link to [[Alpha#^'
+  };
+  const blockItems = provider.provideCompletionItems(mockBlockDoc, { line: 0, character: 17 });
+  assert.strictEqual(blockItems.some(i => i.label === '^block1'), true);
+});
+
+test('MarkGardenDocumentLinkProvider dynamically resolves updated targets without stale cache', () => {
+  const indexer = new WorkspaceNotesIndexer();
+  indexer.indexFileContent('/vault/Target.md', '# Target Note\nContent');
+
+  const provider = new MarkGardenDocumentLinkProvider(indexer);
+  const doc = {
+    fileName: '/vault/Source.md',
+    getText: () => 'See [[Target]] for details.',
+    positionAt: (idx) => ({ line: 0, character: idx }),
+    version: 1,
+    uri: { toString: () => 'file:///vault/Source.md' }
+  };
+
+  const links1 = provider.provideDocumentLinks(doc);
+  assert.strictEqual(links1.length, 1);
+  assert.strictEqual(links1[0].tooltip.includes('Open "Target"'), true);
+
+  // Now delete Target.md and verify tooltip reflects "Create" rather than stale "Open"
+  indexer.handleFileDelete('/vault/Target.md');
+  const links2 = provider.provideDocumentLinks(doc);
+  assert.strictEqual(links2.length, 1);
+  assert.strictEqual(links2[0].tooltip.includes('Create "Target"'), true);
 });
 
 console.log(`\nResults: ${testsPassed} passed, ${testsFailed} failed.`);

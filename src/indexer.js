@@ -450,29 +450,87 @@ class WorkspaceNotesIndexer {
   }
 
   /**
-   * Initializes indexer, builds initial index, and sets up file system watchers.
+   * Initializes indexer, builds initial index, and sets up file system watchers and workspace event listeners.
    */
   async initialize(_context) {
     await this.rebuildIndex();
 
     // Create file system watcher for markdown and media files
-    this._watcher = vscode.workspace.createFileSystemWatcher('**/*.{md,png,jpg,jpeg,gif,svg,webp,bmp,ico,pdf,mp3,mp4,wav,webm}');
+    if (vscode.workspace && typeof vscode.workspace.createFileSystemWatcher === 'function') {
+      this._watcher = vscode.workspace.createFileSystemWatcher('**/*.{md,png,jpg,jpeg,gif,svg,webp,bmp,ico,pdf,mp3,mp4,wav,webm}');
 
-    const createDisposable = this._watcher.onDidCreate(uri => this._handleFileChange(uri.fsPath));
-    const changeDisposable = this._watcher.onDidChange(uri => this._handleFileChange(uri.fsPath));
-    const deleteDisposable = this._watcher.onDidDelete(uri => this._handleFileDelete(uri.fsPath));
+      const createDisposable = this._watcher.onDidCreate(uri => this._handleFileChange(uri.fsPath));
+      const changeDisposable = this._watcher.onDidChange(uri => this._handleFileChange(uri.fsPath));
+      const deleteDisposable = this._watcher.onDidDelete(uri => this._handleFileDelete(uri.fsPath));
 
-    this._disposables.push(createDisposable, changeDisposable, deleteDisposable);
+      this._disposables.push(createDisposable, changeDisposable, deleteDisposable);
+    }
+
+    // Watch for VS Code explicit file rename events
+    if (vscode.workspace && typeof vscode.workspace.onDidRenameFiles === 'function') {
+      const renameDisposable = vscode.workspace.onDidRenameFiles(e => {
+        if (e && Array.isArray(e.files)) {
+          for (const file of e.files) {
+            this._handleFileRename(file.oldUri.fsPath, file.newUri.fsPath);
+          }
+        }
+      });
+      this._disposables.push(renameDisposable);
+    }
+
+    // Watch for VS Code explicit file creation & deletion events
+    if (vscode.workspace && typeof vscode.workspace.onDidCreateFiles === 'function') {
+      const createFilesDisposable = vscode.workspace.onDidCreateFiles(e => {
+        if (e && Array.isArray(e.files)) {
+          for (const uri of e.files) {
+            this._handleFileChange(uri.fsPath);
+          }
+        }
+      });
+      this._disposables.push(createFilesDisposable);
+    }
+
+    if (vscode.workspace && typeof vscode.workspace.onDidDeleteFiles === 'function') {
+      const deleteFilesDisposable = vscode.workspace.onDidDeleteFiles(e => {
+        if (e && Array.isArray(e.files)) {
+          for (const uri of e.files) {
+            this._handleFileDelete(uri.fsPath);
+          }
+        }
+      });
+      this._disposables.push(deleteFilesDisposable);
+    }
+
+    // Watch for document save events
+    if (vscode.workspace && typeof vscode.workspace.onDidSaveTextDocument === 'function') {
+      const saveDisposable = vscode.workspace.onDidSaveTextDocument(doc => {
+        if (doc && doc.languageId === 'markdown' && doc.uri && doc.uri.scheme === 'file') {
+          this._handleFileChange(doc.uri.fsPath, doc.getText());
+        }
+      });
+      this._disposables.push(saveDisposable);
+    }
+
+    // Real-time document changes: keep active buffer indexed
+    if (vscode.workspace && typeof vscode.workspace.onDidChangeTextDocument === 'function') {
+      const docChangeDisposable = vscode.workspace.onDidChangeTextDocument(e => {
+        if (e && e.document && e.document.languageId === 'markdown' && e.document.uri && e.document.uri.scheme === 'file') {
+          this._handleFileChange(e.document.uri.fsPath, e.document.getText());
+        }
+      });
+      this._disposables.push(docChangeDisposable);
+    }
 
     // Watch for configuration changes that might affect exclusions or folders
-    const configDisposable = vscode.workspace.onDidChangeConfiguration(e => {
-      if (e.affectsConfiguration('markgarden')) {
-        this._updateConfigCache();
-        this.rebuildIndex();
-      }
-    });
-
-    this._disposables.push(configDisposable);
+    if (vscode.workspace && typeof vscode.workspace.onDidChangeConfiguration === 'function') {
+      const configDisposable = vscode.workspace.onDidChangeConfiguration(e => {
+        if (e && e.affectsConfiguration && e.affectsConfiguration('markgarden')) {
+          this._updateConfigCache();
+          this.rebuildIndex();
+        }
+      });
+      this._disposables.push(configDisposable);
+    }
   }
 
   /**
@@ -597,9 +655,24 @@ class WorkspaceNotesIndexer {
    * Each file gets its own debounce timer so rapid edits to file A
    * don't cancel a pending re-index of file B.
    */
-  _handleFileChange(filePath) {
-    if (!filePath.endsWith('.md')) return;
-    if (this._shouldIgnore(filePath)) return;
+  _handleFileChange(filePath, content = null) {
+    if (!filePath || this._shouldIgnore(filePath)) return;
+
+    const ext = path.extname(filePath).toLowerCase();
+    const MEDIA_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico', '.pdf', '.mp3', '.mp4', '.wav', '.webm']);
+
+    if (MEDIA_EXTS.has(ext)) {
+      const baseName = path.basename(filePath).toLowerCase();
+      if (!this.mediaToPathIndex.has(baseName)) {
+        this.mediaToPathIndex.set(baseName, new Set());
+      }
+      this.mediaToPathIndex.get(baseName).add(filePath);
+      this._invalidateCache();
+      this._onDidChangeIndex.fire();
+      return;
+    }
+
+    if (ext !== '.md') return;
 
     // Clear only this file's timer
     const existingTimer = this._debounceTimers.get(filePath);
@@ -607,12 +680,39 @@ class WorkspaceNotesIndexer {
       clearTimeout(existingTimer);
     }
 
+    // If explicit content is supplied (e.g. from an open editor buffer or save event), index immediately
+    if (content !== null && typeof content === 'string') {
+      const timerId = setTimeout(() => {
+        this._debounceTimers.delete(filePath);
+        try {
+          this._removeFileFromIndices(filePath);
+          this._indexFileContent(filePath, content);
+          this._resolveLinksForFile(filePath);
+          this._invalidateCache();
+          this._onDidChangeIndex.fire();
+        } catch {
+          // ignore
+        }
+      }, 75);
+      this._debounceTimers.set(filePath, timerId);
+      return;
+    }
+
     const timerId = setTimeout(async () => {
       this._debounceTimers.delete(filePath);
       try {
-        const content = await fs.promises.readFile(filePath, 'utf8');
+        let fileContent = null;
+        if (vscode.workspace && Array.isArray(vscode.workspace.textDocuments)) {
+          const openDoc = vscode.workspace.textDocuments.find(d => d.fileName === filePath);
+          if (openDoc) {
+            fileContent = openDoc.getText();
+          }
+        }
+        if (fileContent === null) {
+          fileContent = await fs.promises.readFile(filePath, 'utf8');
+        }
         this._removeFileFromIndices(filePath);
-        this._indexFileContent(filePath, content);
+        this._indexFileContent(filePath, fileContent);
         this._resolveLinksForFile(filePath);
         this._invalidateCache();
         this._onDidChangeIndex.fire();
@@ -625,23 +725,55 @@ class WorkspaceNotesIndexer {
   }
 
   // Keep public alias for backwards compatibility with navigateWikilink calling handleFileChange
-  handleFileChange(filePath) {
-    this._handleFileChange(filePath);
+  handleFileChange(filePath, content = null) {
+    this._handleFileChange(filePath, content);
   }
 
   /**
    * Handles real-time file deletion.
    */
   _handleFileDelete(filePath) {
+    if (!filePath) return;
     const existingTimer = this._debounceTimers.get(filePath);
     if (existingTimer) {
       clearTimeout(existingTimer);
       this._debounceTimers.delete(filePath);
     }
     this._removeFileFromIndices(filePath);
+    this._removeMediaFromIndices(filePath);
     this.fileIndex.delete(filePath);
     this._invalidateCache();
     this._onDidChangeIndex.fire();
+  }
+
+  /**
+   * Handles real-time file rename.
+   */
+  _handleFileRename(oldPath, newPath) {
+    this._handleFileDelete(oldPath);
+    this._handleFileChange(newPath);
+  }
+
+  /**
+   * Removes a media file from the media inverted index.
+   */
+  _removeMediaFromIndices(filePath) {
+    const baseName = path.basename(filePath).toLowerCase();
+    const set = this.mediaToPathIndex.get(baseName);
+    if (set) {
+      set.delete(filePath);
+      if (set.size === 0) {
+        this.mediaToPathIndex.delete(baseName);
+      }
+    }
+  }
+
+  handleFileRename(oldPath, newPath) {
+    this._handleFileRename(oldPath, newPath);
+  }
+
+  handleFileDelete(filePath) {
+    this._handleFileDelete(filePath);
   }
 
   /**
@@ -796,10 +928,34 @@ class WorkspaceNotesIndexer {
       }
       this.normalizedTitleIndex.get(normH1).add(filePath);
     }
+
+    // Inverted index for aliases
+    if (frontmatter.aliases) {
+      for (const alias of frontmatter.aliases) {
+        if (alias && typeof alias === 'string') {
+          const aliasKey = alias.toLowerCase().trim();
+          if (aliasKey) {
+            if (!this.titleToPathIndex.has(aliasKey)) {
+              this.titleToPathIndex.set(aliasKey, new Set());
+            }
+            this.titleToPathIndex.get(aliasKey).add(filePath);
+
+            const normAlias = aliasKey.replace(/[\s\-_]/g, '');
+            if (normAlias) {
+              if (!this.normalizedTitleIndex.has(normAlias)) {
+                this.normalizedTitleIndex.set(normAlias, new Set());
+              }
+              this.normalizedTitleIndex.get(normAlias).add(filePath);
+            }
+          }
+        }
+      }
+    }
   }
 
   // Public alias for testing
   indexFileContent(filePath, content) {
+    this._removeFileFromIndices(filePath);
     this._indexFileContent(filePath, content);
     this._resolveLinksForFile(filePath);
   }
@@ -876,33 +1032,31 @@ class WorkspaceNotesIndexer {
       }
     }
 
-    const baseKey = existing.baseName.toLowerCase();
-    const baseSet = this.titleToPathIndex.get(baseKey);
-    if (baseSet) {
-      baseSet.delete(filePath);
-      if (baseSet.size === 0) this.titleToPathIndex.delete(baseKey);
-    }
-
-    const normBase = baseKey.replace(/[\s\-_]/g, '');
-    const normBaseSet = this.normalizedTitleIndex.get(normBase);
-    if (normBaseSet) {
-      normBaseSet.delete(filePath);
-      if (normBaseSet.size === 0) this.normalizedTitleIndex.delete(normBase);
-    }
-
-    if (existing.frontmatterTitle) {
-      const titleKey = existing.frontmatterTitle.toLowerCase();
-      const titleSet = this.titleToPathIndex.get(titleKey);
-      if (titleSet) {
-        titleSet.delete(filePath);
-        if (titleSet.size === 0) this.titleToPathIndex.delete(titleKey);
+    const removeTitleKey = (keyStr) => {
+      if (!keyStr || typeof keyStr !== 'string') return;
+      const k = keyStr.toLowerCase().trim();
+      if (!k) return;
+      const set = this.titleToPathIndex.get(k);
+      if (set) {
+        set.delete(filePath);
+        if (set.size === 0) this.titleToPathIndex.delete(k);
       }
+      const norm = k.replace(/[\s\-_]/g, '');
+      if (norm) {
+        const normSet = this.normalizedTitleIndex.get(norm);
+        if (normSet) {
+          normSet.delete(filePath);
+          if (normSet.size === 0) this.normalizedTitleIndex.delete(norm);
+        }
+      }
+    };
 
-      const normTitle = titleKey.replace(/[\s\-_]/g, '');
-      const normTitleSet = this.normalizedTitleIndex.get(normTitle);
-      if (normTitleSet) {
-        normTitleSet.delete(filePath);
-        if (normTitleSet.size === 0) this.normalizedTitleIndex.delete(normTitle);
+    removeTitleKey(existing.baseName);
+    removeTitleKey(existing.title);
+    removeTitleKey(existing.frontmatterTitle);
+    if (Array.isArray(existing.aliases)) {
+      for (const alias of existing.aliases) {
+        removeTitleKey(alias);
       }
     }
   }

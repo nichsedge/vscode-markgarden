@@ -206,14 +206,6 @@ class MarkGardenDocumentLinkProvider {
 
   provideDocumentLinks(document) {
     const links = findWikilinksInDocument(document);
-    const meta = this.indexer.fileIndex.get(document.fileName);
-    // Build a quick lookup map from targetNote -> resolved path using cached resolved links
-    const resolvedMap = new Map();
-    if (meta && meta.resolvedLinks) {
-      for (const { link, targetPath } of meta.resolvedLinks) {
-        resolvedMap.set(link.targetNote, targetPath);
-      }
-    }
 
     return links.map(item => {
       const parsed = parseWikilinkTarget(item.target);
@@ -236,7 +228,7 @@ class MarkGardenDocumentLinkProvider {
       }
 
       const targetPath = parsed.targetNote
-        ? (resolvedMap.get(parsed.targetNote) || this.indexer.resolveNotePath(parsed.targetNote, document.fileName))
+        ? this.indexer.resolveNotePath(parsed.targetNote, document.fileName)
         : document.fileName;
 
       let anchorText = '';
@@ -374,17 +366,50 @@ class MarkGardenCompletionItemProvider {
       }
 
       if (targetFile) {
-        const targetMeta = this.indexer.fileIndex.get(targetFile);
+        // If targeting the current file, extract headings and blocks directly from current document text
+        let fileHeadings = null;
+        let fileBlocks = null;
+
+        if (targetFile === document.fileName) {
+          try {
+            const currentDocText = document.getText();
+            const { extractBlockReferences } = require('./indexer');
+            fileHeadings = extractHeadings(currentDocText);
+            fileBlocks = extractBlockReferences(currentDocText);
+          } catch {
+            // fallback
+          }
+        }
+
+        if (!fileHeadings || !fileBlocks) {
+          const targetMeta = this.indexer.fileIndex.get(targetFile);
+          if (targetMeta) {
+            fileHeadings = fileHeadings || targetMeta.headings;
+            fileBlocks = fileBlocks || targetMeta.blocks;
+          }
+        }
+
+        if (!fileHeadings) {
+          try {
+            fs.accessSync(targetFile);
+            const content = fs.readFileSync(targetFile, 'utf8');
+            const { extractBlockReferences } = require('./indexer');
+            fileHeadings = extractHeadings(content);
+            fileBlocks = fileBlocks || extractBlockReferences(content);
+          } catch {
+            // ignore
+          }
+        }
 
         // If typing #^..., prioritize block references
         if (searchAnchor.startsWith('^')) {
-          const blocks = targetMeta ? targetMeta.blocks : null;
-          if (blocks) {
-            for (const b of blocks) {
+          if (fileBlocks) {
+            for (const b of fileBlocks) {
               const item = new vscode.CompletionItem(`^${b.id}`, vscode.CompletionItemKind.Reference);
               item.detail = `Block reference in ${path.basename(targetFile)}`;
               item.documentation = b.text;
               item.insertText = `^${b.id}`;
+              item.filterText = `^${b.id} ${b.text}`;
               items.push(item);
             }
           }
@@ -392,37 +417,24 @@ class MarkGardenCompletionItemProvider {
         }
 
         // Headings autocompletion
-        const headings = targetMeta ? targetMeta.headings : null;
-        if (headings) {
-          for (const h of headings) {
+        if (fileHeadings) {
+          for (const h of fileHeadings) {
             const item = new vscode.CompletionItem(h.text, vscode.CompletionItemKind.Reference);
             item.detail = `Heading (H${h.level}) in ${path.basename(targetFile)}`;
             item.insertText = h.text;
+            item.filterText = `${h.text} H${h.level}`;
             items.push(item);
-          }
-        } else {
-          try {
-            fs.accessSync(targetFile);
-            const content = fs.readFileSync(targetFile, 'utf8');
-            const diskHeadings = extractHeadings(content);
-            for (const h of diskHeadings) {
-              const item = new vscode.CompletionItem(h.text, vscode.CompletionItemKind.Reference);
-              item.detail = `Heading (H${h.level}) in ${path.basename(targetFile)}`;
-              item.insertText = h.text;
-              items.push(item);
-            }
-          } catch {
-            // ignore
           }
         }
 
         // Also suggest block references if available
-        if (targetMeta && targetMeta.blocks && targetMeta.blocks.length > 0) {
-          for (const b of targetMeta.blocks) {
+        if (fileBlocks && fileBlocks.length > 0) {
+          for (const b of fileBlocks) {
             const item = new vscode.CompletionItem(`^${b.id}`, vscode.CompletionItemKind.Reference);
             item.detail = `Block reference in ${path.basename(targetFile)}`;
             item.documentation = b.text;
             item.insertText = `^${b.id}`;
+            item.filterText = `^${b.id} ${b.text}`;
             items.push(item);
           }
         }
@@ -430,7 +442,7 @@ class MarkGardenCompletionItemProvider {
       return items;
     }
 
-    // Autocomplete note titles
+    // Autocomplete note titles & aliases
     const allNotes = this.indexer.getAllNotes();
     const seenTitles = new Set();
 
@@ -443,6 +455,7 @@ class MarkGardenCompletionItemProvider {
         if (note.frontmatterTitle && note.frontmatterTitle !== note.baseName) {
           item.documentation = `Title: ${note.frontmatterTitle}`;
         }
+        item.filterText = `${note.baseName} ${note.title || ''} ${note.relativePath}`;
         items.push(item);
       }
 
@@ -451,7 +464,21 @@ class MarkGardenCompletionItemProvider {
         seenTitles.add(note.title);
         const item = new vscode.CompletionItem(note.title, vscode.CompletionItemKind.File);
         item.detail = `${note.baseName}.md (${note.relativePath})`;
+        item.filterText = `${note.title} ${note.baseName} ${note.relativePath}`;
         items.push(item);
+      }
+
+      // Suggest aliases if present
+      if (Array.isArray(note.aliases)) {
+        for (const alias of note.aliases) {
+          if (alias && typeof alias === 'string' && !seenTitles.has(alias)) {
+            seenTitles.add(alias);
+            const item = new vscode.CompletionItem(alias, vscode.CompletionItemKind.Reference);
+            item.detail = `Alias for ${note.baseName}.md (${note.relativePath})`;
+            item.filterText = `${alias} ${note.baseName} ${note.relativePath}`;
+            items.push(item);
+          }
+        }
       }
     }
 
@@ -463,6 +490,7 @@ class MarkGardenCompletionItemProvider {
           seenTitles.add(media.baseName);
           const item = new vscode.CompletionItem(media.baseName, vscode.CompletionItemKind.File);
           item.detail = `Media Attachment (${path.basename(media.filePath)})`;
+          item.filterText = `${media.baseName} ${path.basename(media.filePath)}`;
           items.push(item);
         }
       }

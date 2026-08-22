@@ -83,7 +83,7 @@ async function activate(context) {
   context.subscriptions.push(
     vscode.languages.registerDocumentLinkProvider(markdownSelector, docLinkProvider),
     vscode.languages.registerDefinitionProvider(markdownSelector, defProvider),
-    vscode.languages.registerCompletionItemProvider(markdownSelector, wikilinkCompletionProvider, '['),
+    vscode.languages.registerCompletionItemProvider(markdownSelector, wikilinkCompletionProvider, '[', '#', '^', '/', '|'),
     vscode.languages.registerCompletionItemProvider(markdownSelector, hashtagCompletionProvider, '#'),
     vscode.languages.registerCompletionItemProvider(markdownSelector, frontmatterCompletionProvider, ':', ' ', '[', '-', '\n', '#'),
     vscode.languages.registerHoverProvider(markdownSelector, hoverProvider)

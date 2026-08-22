@@ -413,17 +413,30 @@ class FrontmatterCompletionProvider {
     // 1. Wikilink completions inside frontmatter (e.g. "[[note")
     const wikilinkMatch = textBeforeCursor.match(/\[\[([^\]]*)$/);
     if (wikilinkMatch) {
-      const query = wikilinkMatch[1].toLowerCase();
       const notes = this.indexer.getAllNotes();
-      return notes
-        .filter(n => !query || n.baseName.toLowerCase().includes(query) || (n.frontmatterTitle && n.frontmatterTitle.toLowerCase().includes(query)))
-        .map(n => {
+      const items = [];
+      const seen = new Set();
+      for (const n of notes) {
+        if (!seen.has(n.baseName)) {
+          seen.add(n.baseName);
           const item = new vscode.CompletionItem(n.baseName, vscode.CompletionItemKind.Reference);
           item.insertText = `${n.baseName}]]`;
           item.detail = n.frontmatterTitle ? `Title: ${n.frontmatterTitle}` : `Note: ${n.relativePath}`;
           item.documentation = new vscode.MarkdownString(`Link to **${n.baseName}**\n\n*Path*: \`${n.relativePath}\``);
-          return item;
-        });
+          item.filterText = `${n.baseName} ${n.title || ''} ${n.relativePath}`;
+          items.push(item);
+        }
+        if (n.title && n.title !== n.baseName && !seen.has(n.title)) {
+          seen.add(n.title);
+          const item = new vscode.CompletionItem(n.title, vscode.CompletionItemKind.Reference);
+          item.insertText = `${n.title}]]`;
+          item.detail = `${n.baseName}.md (${n.relativePath})`;
+          item.documentation = new vscode.MarkdownString(`Link to **${n.title}** (${n.baseName}.md)\n\n*Path*: \`${n.relativePath}\``);
+          item.filterText = `${n.title} ${n.baseName} ${n.relativePath}`;
+          items.push(item);
+        }
+      }
+      return items;
     }
 
     // 2. Tag completions under tags: or tag:
