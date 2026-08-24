@@ -896,6 +896,7 @@ module.exports = {
   setGrowthStageInMarkdown,
   setPublishStatusInMarkdown,
   auditGarden,
+  resolveNoteFromIndexer,
   DigitalGardenTreeDataProvider,
   DigitalGardenStatusBarManager,
   DigitalGardenDiagnosticsProvider,

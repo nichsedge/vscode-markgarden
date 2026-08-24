@@ -80,7 +80,7 @@ const {
   renameTagInMarkdown,
   renameCategoryInMarkdown
 } = require('../src/tagsCategories');
-const { processTemplate, formatDateTime } = require('../src/templates');
+const { processTemplate, formatDateTime, parseTemplateMetadata } = require('../src/templates');
 const {
   getFrontmatterInfo,
   formatFrontmatterInMarkdown,
@@ -101,7 +101,8 @@ const {
   detectPublishStatus,
   setGrowthStageInMarkdown,
   setPublishStatusInMarkdown,
-  auditGarden
+  auditGarden,
+  resolveNoteFromIndexer
 } = require('../src/digitalGarden');
 
 const {
@@ -292,6 +293,21 @@ test('formatDateTime formats date with custom tokens', () => {
   const date = new Date(2026, 4, 20, 15, 30, 45);
   const formatted = formatDateTime(date, 'YYYY/MM/DD - HH:mm:ss');
   assert.strictEqual(formatted, '2026/05/20 - 15:30:45');
+});
+
+test('parseTemplateMetadata extracts title, description, and tags from template frontmatter', () => {
+  const content = `---\ntitle: Meeting Notes\ndescription: "Template for meetings"\ntags: [meeting, work]\n---\n# {{title}}`;
+  const meta = parseTemplateMetadata('/vault/templates/meeting.md', content);
+  assert.strictEqual(meta.title, 'Meeting Notes');
+  assert.strictEqual(meta.description, 'Template for meetings');
+  assert.deepStrictEqual(meta.tags, ['meeting', 'work']);
+});
+
+test('parseTemplateMetadata falls back to filename when no frontmatter', () => {
+  const meta = parseTemplateMetadata('/vault/templates/plain.md', 'no frontmatter here');
+  assert.strictEqual(meta.title, 'plain');
+  assert.strictEqual(meta.description, '');
+  assert.deepStrictEqual(meta.tags, []);
 });
 
 test('processTemplate replaces {{title}}, {{date}}, and {{time}}', () => {
@@ -994,6 +1010,21 @@ test('auditGarden calculates growth breakdown, publish breakdown, broken links, 
   // Health score calculated
   assert.strictEqual(typeof audit.healthScore, 'number');
   assert.strictEqual(audit.healthScore < 100, true);
+});
+
+test('resolveNoteFromIndexer resolves by title/alias and returns null for unknown targets', () => {
+  const { WorkspaceNotesIndexer } = require('../src/indexer');
+  const indexer = new WorkspaceNotesIndexer();
+  indexer.indexFileContent('/vault/garden.md', `---\ntitle: Garden\naliases: [Paradise]\n---\nContent`);
+
+  const byTitle = resolveNoteFromIndexer(indexer, 'Garden', '/vault/other.md');
+  assert.strictEqual(byTitle && byTitle.title, 'Garden');
+
+  const byAlias = resolveNoteFromIndexer(indexer, 'Paradise', '/vault/other.md');
+  assert.strictEqual(byAlias && byAlias.title, 'Garden');
+
+  assert.strictEqual(resolveNoteFromIndexer(null, 'Garden'), null);
+  assert.strictEqual(resolveNoteFromIndexer(indexer, 'DoesNotExist', '/vault/other.md'), null);
 });
 
 // --- Obsidian Callouts Tests ---
