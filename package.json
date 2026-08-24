@@ -36,7 +36,7 @@
     "test": "node test/runTests.js"
   },
   "devDependencies": {
-    "@types/node": "^16.11.7",
+    "@types/node": "^20.0.0",
     "@types/vscode": "^1.75.0",
     "@vscode/vsce": "^2.15.0",
     "eslint": "^8.28.0"
@@ -93,7 +93,8 @@
       {
         "command": "markgarden.insertTemplate",
         "title": "Insert Template",
-        "category": "MarkGarden"
+        "category": "MarkGarden",
+        "enablement": "editorLangId == markdown"
       },
       {
         "command": "markgarden.openLinkAtCursor",
@@ -103,12 +104,14 @@
       {
         "command": "markgarden.addTag",
         "title": "Add Tag to Current Note",
-        "category": "MarkGarden"
+        "category": "MarkGarden",
+        "enablement": "editorLangId == markdown"
       },
       {
         "command": "markgarden.removeTag",
         "title": "Remove Tag from Current Note",
-        "category": "MarkGarden"
+        "category": "MarkGarden",
+        "enablement": "editorLangId == markdown"
       },
       {
         "command": "markgarden.findNotesByTag",
@@ -123,12 +126,14 @@
       {
         "command": "markgarden.addCategory",
         "title": "Add Category to Current Note",
-        "category": "MarkGarden"
+        "category": "MarkGarden",
+        "enablement": "editorLangId == markdown"
       },
       {
         "command": "markgarden.removeCategory",
         "title": "Remove Category from Current Note",
-        "category": "MarkGarden"
+        "category": "MarkGarden",
+        "enablement": "editorLangId == markdown"
       },
       {
         "command": "markgarden.findNotesByCategory",
@@ -178,7 +183,8 @@
       {
         "command": "markgarden.formatFrontmatter",
         "title": "Format Frontmatter",
-        "category": "MarkGarden"
+        "category": "MarkGarden",
+        "enablement": "editorLangId == markdown"
       },
       {
         "command": "markgarden.renameProperty",
@@ -193,7 +199,8 @@
       {
         "command": "markgarden.syncTitleWithFilename",
         "title": "Sync Note Title with Filename",
-        "category": "MarkGarden"
+        "category": "MarkGarden",
+        "enablement": "editorLangId == markdown"
       },
       {
         "command": "markgarden.togglePublishStatus",
