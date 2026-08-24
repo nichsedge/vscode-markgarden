@@ -34,9 +34,13 @@ Module.prototype.require = function(path) {
       workspace: {
         workspaceFolders: [],
         getWorkspaceFolder: () => null,
-        getConfiguration: () => ({ get: (k, d) => d })
+        getConfiguration: () => ({ get: (k, d) => d }),
+        applyEdit: (edit) => {
+          Module.prototype.__appliedWorkspaceEdits = edit.edits;
+          return Promise.resolve(true);
+        }
       },
-      window: {},
+      window: { showInformationMessage: () => {} },
       commands: {},
       languages: {},
       ThemeIcon: class {},
@@ -1027,6 +1031,33 @@ test('resolveNoteFromIndexer resolves by title/alias and returns null for unknow
   assert.strictEqual(resolveNoteFromIndexer(indexer, 'DoesNotExist', '/vault/other.md'), null);
 });
 
+test('updateWikilinksOnRename rewrites links pointing at the renamed note', async () => {
+  const { WorkspaceNotesIndexer } = require('../src/indexer');
+  const indexer = new WorkspaceNotesIndexer();
+  indexer.indexFileContent('/vault/b.md', `---\ntitle: B\n---\nContent`);
+  indexer.indexFileContent('/vault/a.md', `Links: [[b]] and [[b|alias]] and [[b#Section]] but not [[c]].`);
+
+  Module.prototype.__appliedWorkspaceEdits = null;
+  const count = await indexer.updateWikilinksOnRename('/vault/b.md', '/vault/renamed-b.md');
+
+  assert.strictEqual(count, 3);
+  const edits = Module.prototype.__appliedWorkspaceEdits || [];
+  assert.strictEqual(edits.length, 3);
+  assert.deepStrictEqual(edits.map(e => e.text), ['renamed-b', 'renamed-b', 'renamed-b']);
+});
+test('updateWikilinksOnRename ignores unrelated renames and non-markdown files', async () => {
+  const { WorkspaceNotesIndexer } = require('../src/indexer');
+  const indexer = new WorkspaceNotesIndexer();
+  indexer.indexFileContent('/vault/b.md', `[[a]]`);
+
+  Module.prototype.__appliedWorkspaceEdits = null;
+  // Renaming a note nobody links to
+  assert.strictEqual(await indexer.updateWikilinksOnRename('/vault/b.md', '/vault/b2.md'), 0);
+  // Non-markdown target
+  assert.strictEqual(await indexer.updateWikilinksOnRename('/vault/a.png', '/vault/b.png'), 0);
+  assert.strictEqual(Module.prototype.__appliedWorkspaceEdits, null);
+});
+
 // --- Obsidian Callouts Tests ---
 console.log('\nObsidian Callouts & Markdown-it Rendering:');
 
@@ -1122,7 +1153,7 @@ test('markdownItCalloutsPlugin transforms callouts into styled HTML containers a
 // --- Dynamic Indexing & Autocompletion Tests ---
 console.log('\nDynamic Indexing & Auto-Hint Synchronization:');
 
-test('WorkspaceNotesIndexer handles real-time file rename, title updates, and removes stale entries', () => {
+test('WorkspaceNotesIndexer handles real-time file rename, title updates, and removes stale entries', async () => {
   const indexer = new WorkspaceNotesIndexer();
   const oldPath = '/vault/Old Note.md';
   const newPath = '/vault/New Note.md';
@@ -1134,7 +1165,7 @@ test('WorkspaceNotesIndexer handles real-time file rename, title updates, and re
   assert.strictEqual(indexer.resolveNotePath('Legacy Alias'), oldPath);
 
   // Perform rename
-  indexer.handleFileRename(oldPath, newPath);
+  await indexer.handleFileRename(oldPath, newPath);
   indexer.indexFileContent(newPath, '---\ntitle: "New Title"\naliases: ["Fresh Alias"]\n---\nContent');
 
   // Old references must be completely gone (not stale)

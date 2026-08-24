@@ -512,6 +512,22 @@ class WorkspaceNotesIndexer {
       const config = vscode.workspace.getConfiguration('markgarden');
       this._cachedTemplatesFolder = config.get('templatesFolder', 'templates') || 'templates';
       this._cachedExcludeTemplates = config.get('excludeTemplatesFromIndex', true);
+
+      // Convert glob-style excludedFolders patterns (e.g. "**/notes-private/**")
+      // into simple path-segment strings for fast checks in _shouldIgnore().
+      // Patterns containing other glob wildcards are skipped (not safely approximable).
+      const defaultExcludes = [
+        '**/node_modules/**',
+        '**/.git/**',
+        '**/.vscode/**',
+        '**/dist/**',
+        '**/out/**',
+        '**/vendor/**'
+      ];
+      const excludedGlobs = config.get('excludedFolders', defaultExcludes);
+      this._cachedExcludeSegments = (Array.isArray(excludedGlobs) ? excludedGlobs : [])
+        .map(pattern => String(pattern).replace(/^\*\*\//, '').replace(/\/\*\*$/, '').trim())
+        .filter(seg => seg && !/[*?[\]{}]/.test(seg));
     } catch {
       // ignore
     }
@@ -817,9 +833,81 @@ class WorkspaceNotesIndexer {
   /**
    * Handles real-time file rename.
    */
-  _handleFileRename(oldPath, newPath) {
+  async _handleFileRename(oldPath, newPath) {
+    await this.updateWikilinksOnRename(oldPath, newPath);
     this._handleFileDelete(oldPath);
     this._handleFileChange(newPath);
+  }
+
+  /**
+   * Converts a character offset in content into a vscode Position.
+   */
+  _offsetToPosition(content, offset) {
+    let line = 0;
+    let lastNewline = -1;
+    for (let i = 0; i < offset; i++) {
+      if (content.charCodeAt(i) === 10) {
+        line++;
+        lastNewline = i;
+      }
+    }
+    return { line, character: offset - lastNewline - 1 };
+  }
+
+  /**
+   * Rewrites [[wikilinks]] in all notes that referenced a renamed note so
+   * backlinks stay valid after renames/moves (Obsidian-style behavior).
+   * @returns {number} number of links updated
+   */
+  async updateWikilinksOnRename(oldPath, newPath) {
+    if (!oldPath || !newPath) return 0;
+    if (!newPath.toLowerCase().endsWith('.md')) return 0;
+    const oldBase = path.basename(oldPath).replace(/\.md$/i, '');
+    const newBase = path.basename(newPath).replace(/\.md$/i, '');
+    if (oldBase.toLowerCase() === newBase.toLowerCase()) return 0;
+
+    if (!vscode.workspace || typeof vscode.workspace.applyEdit !== 'function') return 0;
+
+    const edit = new vscode.WorkspaceEdit();
+    let updatedCount = 0;
+
+    for (const [filePath, meta] of this.fileIndex) {
+      if (filePath === oldPath || !meta.links || !meta.links.length) continue;
+      const content = meta._content || '';
+      if (!content.includes('[[')) continue;
+
+      for (const link of meta.links) {
+        const target = link.targetNote || '';
+        if (!target || target.toLowerCase().lastIndexOf(oldBase.toLowerCase()) === -1) continue;
+
+        // Only rewrite links that actually resolve to the renamed note
+        const resolved = this.resolveNotePath(target, filePath);
+        if (resolved !== oldPath) continue;
+
+        // Preserve any directory prefix inside path-style targets
+        const lowerTarget = target.toLowerCase();
+        const idx = lowerTarget.lastIndexOf(oldBase.toLowerCase());
+        const newTarget = target.slice(0, idx) + newBase + target.slice(idx + oldBase.length);
+        if (newTarget === target) continue;
+
+        const startPos = this._offsetToPosition(content, link.index + 2);
+        const endPos = this._offsetToPosition(content, link.index + 2 + target.length);
+        edit.replace(
+          vscode.Uri.file(filePath),
+          new vscode.Range(new vscode.Position(startPos.line, startPos.character), new vscode.Position(endPos.line, endPos.character)),
+          newTarget
+        );
+        updatedCount++;
+      }
+    }
+
+    if (updatedCount > 0) {
+      const applied = await vscode.workspace.applyEdit(edit);
+      if (applied) {
+        vscode.window.showInformationMessage(`MarkGarden: Updated ${updatedCount} wikilink${updatedCount === 1 ? '' : 's'} to "${newBase}".`);
+      }
+    }
+    return updatedCount;
   }
 
   /**

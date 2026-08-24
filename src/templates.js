@@ -78,7 +78,7 @@ function parseTemplateMetadata(filePath, fileContent) {
 
   const frontmatterMatch = fileContent.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (frontmatterMatch) {
-    const yamlLines = frontmatterMatch[1].split('\n');
+    const yamlLines = frontmatterMatch[1].split(/\r?\n/);
     for (const line of yamlLines) {
       const parts = line.split(':');
       if (parts.length >= 2) {
