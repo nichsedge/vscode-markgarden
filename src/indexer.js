@@ -515,6 +515,7 @@ class WorkspaceNotesIndexer {
     // Cached configuration values
     this._cachedTemplatesFolder = 'templates';
     this._cachedExcludeTemplates = true;
+    this._cachedAutoUpdateLinksOnRename = true;
     this._cachedExcludeSegments = [];
     this._updateConfigCache();
 
@@ -532,6 +533,7 @@ class WorkspaceNotesIndexer {
       const config = vscode.workspace.getConfiguration('markgarden');
       this._cachedTemplatesFolder = config.get('templatesFolder', 'templates') || 'templates';
       this._cachedExcludeTemplates = config.get('excludeTemplatesFromIndex', true);
+      this._cachedAutoUpdateLinksOnRename = config.get('wikilinks.autoUpdateOnRename', true);
 
       // Convert glob-style excludedFolders patterns (e.g. "**/notes-private/**")
       // into simple path-segment strings for fast checks in _shouldIgnore().
@@ -888,6 +890,7 @@ class WorkspaceNotesIndexer {
    * @returns {number} number of links updated
    */
   async updateWikilinksOnRename(oldPath, newPath) {
+    if (this._cachedAutoUpdateLinksOnRename === false) return 0;
     if (!oldPath || !newPath) return 0;
     if (!newPath.toLowerCase().endsWith(".md")) return 0;
     const oldBase = path.basename(oldPath).replace(/\.md$/i, '');
@@ -1021,7 +1024,8 @@ class WorkspaceNotesIndexer {
   }
 
   /**
-   * Check if a path matches common exclusion directories.
+   * Check if a path matches exclusion directories: the templates folder,
+   * well-known directories, and the user-configured markgarden.excludedFolders.
    */
   _shouldIgnore(filePath) {
     const normalized = filePath.replace(/\\/g, '/');
@@ -1032,11 +1036,27 @@ class WorkspaceNotesIndexer {
       }
     }
 
-    return normalized.includes('/node_modules/') ||
-           normalized.includes('/.git/') ||
-           normalized.includes('/.vscode/') ||
-           normalized.includes('/dist/') ||
-           normalized.includes('/out/');
+    if (normalized.includes('/node_modules/') ||
+        normalized.includes('/.git/') ||
+        normalized.includes('/.vscode/') ||
+        normalized.includes('/dist/') ||
+        normalized.includes('/out/') ||
+        normalized.includes('/vendor/')) {
+      return true;
+    }
+
+    // Respect user-configured excludedFolders (approximate path-segment matching
+    // prepared by _updateConfigCache; glob wildcards beyond ** prefixes are skipped).
+    const segments = Array.isArray(this._cachedExcludeSegments) ? this._cachedExcludeSegments : [];
+    for (const segment of segments) {
+      if (normalized.includes(`/${segment}/`) ||
+          normalized.startsWith(`${segment}/`) ||
+          normalized.endsWith(`/${segment}`)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**

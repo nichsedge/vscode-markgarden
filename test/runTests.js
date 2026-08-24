@@ -45,7 +45,19 @@ Module.prototype.require = function(path) {
       },
       window: { showInformationMessage: () => {} },
       commands: {},
-      languages: {},
+      languages: {
+        createDiagnosticCollection: () => {
+          const map = new Map();
+          return {
+            set: (uri, diags) => map.set(uri, diags),
+            delete: (uri) => map.delete(uri),
+            get: (uri) => map.get(uri) || [],
+            _map: map
+          };
+        }
+      },
+      Diagnostic: class { constructor(range, message, severity) { this.range = range; this.message = message; this.severity = severity; this.source = ''; this.code = ''; } },
+      DiagnosticSeverity: { Error: 0, Warning: 1, Information: 2, Hint: 3 },
       ThemeIcon: class {},
       TreeItem: class {},
       TreeItemCollapsibleState: {}
@@ -66,7 +78,8 @@ const {
   parseWikilinkTarget,
   findPrimaryDocHeading,
   isMediaFile,
-  sanitizeContentForTags
+  sanitizeContentForTags,
+  maskExcludedRegions
 } = require('../src/indexer');
 const {
   buildNotePreviewMarkdown,
@@ -109,7 +122,8 @@ const {
   setGrowthStageInMarkdown,
   setPublishStatusInMarkdown,
   auditGarden,
-  resolveNoteFromIndexer
+  resolveNoteFromIndexer,
+  DigitalGardenDiagnosticsProvider
 } = require('../src/digitalGarden');
 
 const {
@@ -474,6 +488,66 @@ test('getUnlinkedMentionsForFile detects title and alias mentions with accurate 
   assert.strictEqual(unlinked[0].mentions[2].term, 'Sam Altman');
   assert.strictEqual(unlinked[0].mentions[2].line, 7);
   assert.strictEqual(unlinked[0].mentions[2].targetNote, 'target');
+});
+
+test('backlink index maintained incrementally as links are added and removed', () => {
+  const indexer = new WorkspaceNotesIndexer();
+  indexer.indexFileContent('/v/target.md', '# Target\nBody.');
+  indexer.indexFileContent('/v/a.md', 'See [[Target]] here.');
+
+  assert.strictEqual(indexer.backlinkIndex.get('/v/target.md').has('/v/a.md'), true);
+
+  // Removing the link must remove the backlink entry
+  indexer.indexFileContent('/v/a.md', 'No links anymore.');
+  assert.strictEqual(indexer.backlinkIndex.has('/v/target.md'), false);
+});
+
+test('getBacklinksForFile reflects multiple sources via the incremental index', async () => {
+  const indexer = new WorkspaceNotesIndexer();
+  indexer.indexFileContent('/v/target.md', '# Target\nMain.');
+  indexer.indexFileContent('/v/one.md', 'First [[Target]] ref.');
+  indexer.indexFileContent('/v/two.md', 'Second [[Target]] ref.\nAnd [[Target]] again.');
+
+  const backlinks = await indexer.getBacklinksForFile('/v/target.md');
+  assert.strictEqual(backlinks.length, 2);
+  const two = backlinks.find(b => b.sourceFilePath === '/v/two.md');
+  assert.strictEqual(two.snippets.length, 2);
+  assert.strictEqual(two.snippets[1].lineText, 'And [[Target]] again.');
+});
+
+test('resolveNotePath prefers same-directory matches and normalizes separators', () => {
+  const indexer = new WorkspaceNotesIndexer();
+  const pathA = '/v/projects/My Note.md';
+  const pathB = '/v/archive/My Note.md';
+  indexer.indexFileContent(pathA, '# Alpha');
+  indexer.indexFileContent(pathB, '# Alpha');
+
+  // Same-directory preference wins over insertion order
+  assert.strictEqual(indexer.resolveNotePath('My Note', '/v/archive/deep.md'), pathB);
+  // Normalized match (spaces/dashes/underscores ignored) falls back to first indexed
+  assert.strictEqual(indexer.resolveNotePath('my_note'), pathA);
+  assert.strictEqual(indexer.resolveNotePath('Alpha'), pathA);
+});
+
+test('_shouldIgnore honors configured excluded folders and default directories', () => {
+  const indexer = new WorkspaceNotesIndexer();
+  assert.strictEqual(indexer._shouldIgnore('/w/node_modules/pkg/note.md'), true);
+  assert.strictEqual(indexer._shouldIgnore('/w/.git/objects/x'), true);
+  assert.strictEqual(indexer._shouldIgnore('/w/vendor/lib/note.md'), true);
+  assert.strictEqual(indexer._shouldIgnore('/w/notes/idea.md'), false);
+
+  // Simulate a user-configured markgarden.excludedFolders entry
+  indexer._cachedExcludeSegments = ['private'];
+  assert.strictEqual(indexer._shouldIgnore('/w/private/secret.md'), true);
+  assert.strictEqual(indexer._shouldIgnore('/w/notes/private-notes.md'), false);
+});
+
+test('maskExcludedRegions hides code and frontmatter while preserving line numbers', () => {
+  const md = '---\ntitle: T\n---\nBefore\n```\n[[Hidden]]\n```\nAfter [[Visible]]';
+  const masked = maskExcludedRegions(md);
+  assert.strictEqual(masked.includes('[['), true);      // visible link untouched
+  assert.strictEqual(masked.includes('Hidden'), false); // fenced link masked
+  assert.strictEqual(masked.split('\n').length, md.split('\n').length); // offsets preserved
 });
 
 // --- Block References & Section Extraction Tests ---
@@ -1039,6 +1113,40 @@ test('resolveNoteFromIndexer resolves by title/alias and returns null for unknow
   assert.strictEqual(resolveNoteFromIndexer(indexer, 'DoesNotExist', '/vault/other.md'), null);
 });
 
+test('auditGarden handles an empty workspace without crashing', () => {
+  const { WorkspaceNotesIndexer } = require('../src/indexer');
+  const audit = auditGarden(new WorkspaceNotesIndexer(), {});
+  assert.strictEqual(audit.totalNotes, 0);
+  assert.deepStrictEqual(audit.brokenLinks, []);
+  assert.deepStrictEqual(audit.orphanNotes, []);
+  assert.deepStrictEqual(audit.privacyLeaks, []);
+});
+
+test('DigitalGardenDiagnosticsProvider flags broken links and privacy leaks', () => {
+  const { WorkspaceNotesIndexer } = require('../src/indexer');
+  const indexer = new WorkspaceNotesIndexer();
+  indexer.indexFileContent('/vault/public.md', `---\ntitle: Public\npublish_external: true\n---\nSee [[Missing]] and [[Private]] and [[Public]].`);
+  indexer.indexFileContent('/vault/private.md', `---\ntitle: Private\npublish_external: false\n---\nSecrets.`);
+
+  const provider = new DigitalGardenDiagnosticsProvider(indexer);
+  const mockDoc = {
+    languageId: 'markdown',
+    fileName: '/vault/public.md',
+    uri: { scheme: 'file', toString: () => 'file:///vault/public.md' },
+    getText: () => `---\ntitle: Public\npublish_external: true\n---\nSee [[Missing]] and [[Private]] and [[Public]].`
+  };
+  provider.updateDiagnostics(mockDoc);
+
+  const diags = provider.diagnosticCollection.get(mockDoc.uri);
+  assert.strictEqual(diags.length, 2);
+  const codes = diags.map(d => d.code).sort();
+  assert.deepStrictEqual(codes, ['broken-wikilink', 'privacy-leak']);
+
+  // Non-markdown docs are ignored
+  provider.updateDiagnostics({ ...mockDoc, languageId: 'plaintext' });
+  assert.strictEqual(provider.diagnosticCollection.get(mockDoc.uri).length, 2);
+});
+
 test('updateWikilinksOnRename rewrites links pointing at the renamed note', async () => {
   const { WorkspaceNotesIndexer } = require('../src/indexer');
   const indexer = new WorkspaceNotesIndexer();
@@ -1066,6 +1174,16 @@ test('updateWikilinksOnRename ignores unrelated renames and non-markdown files',
   // Non-markdown target
   assert.strictEqual(await indexer.updateWikilinksOnRename('/vault/a.png', '/vault/b.png'), 0);
   assert.strictEqual((Module.prototype.__appliedWorkspaceBatches || []).length, batchCountBefore);
+  // Setting disabled
+  indexer.indexFileContent('/vault/c.md', `[[b]]`);
+  indexer._cachedAutoUpdateLinksOnRename = false;
+  try {
+    const before = (Module.prototype.__appliedWorkspaceBatches || []).length;
+    assert.strictEqual(await indexer.updateWikilinksOnRename('/vault/b.md', '/vault/renamed-b.md'), 0);
+    assert.strictEqual((Module.prototype.__appliedWorkspaceBatches || []).length, before);
+  } finally {
+    indexer._cachedAutoUpdateLinksOnRename = true;
+  }
 });
 
 // --- Obsidian Callouts Tests ---

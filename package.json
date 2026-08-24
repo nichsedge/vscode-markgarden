@@ -371,6 +371,11 @@
     "configuration": {
       "title": "MarkGarden",
       "properties": {
+        "markgarden.wikilinks.autoUpdateOnRename": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically rewrite [[wikilinks]] that point to a note when the note is renamed or moved, keeping backlinks valid (Obsidian-style behavior)."
+        },
         "markgarden.hoverPreviewEnabled": {
           "type": "boolean",
           "default": true,
