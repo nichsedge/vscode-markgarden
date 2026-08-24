@@ -532,7 +532,7 @@ async function navigateWikilink(targetStr, sourceFilePath, indexer) {
 
     const folder = resolveNewNoteFolder(sourceFilePath);
     try {
-      fs.mkdirSync(folder, { recursive: true });
+      await fs.promises.mkdir(folder, { recursive: true });
     } catch (err) {
       vscode.window.showErrorMessage(`MarkGarden: Failed to create directory: ${err.message}`);
       return;
@@ -543,7 +543,7 @@ async function navigateWikilink(targetStr, sourceFilePath, indexer) {
 
     const initialContent = `---\ntitle: "${parsed.targetNote}"\ndate: ${new Date().toISOString()}\n---\n\n# ${parsed.targetNote}\n`;
     try {
-      fs.writeFileSync(targetPath, initialContent, 'utf8');
+      await fs.promises.writeFile(targetPath, initialContent, 'utf8');
       indexer.handleFileChange(targetPath);
       vscode.window.showInformationMessage(`MarkGarden: Created note "${newFilename}".`);
     } catch (err) {

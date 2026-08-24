@@ -150,6 +150,22 @@ test('parseFrontmatter extracts yaml list syntax tags and single category', () =
   assert.strictEqual(result.categories.has('Projects'), true);
 });
 
+test('parseFrontmatter handles quoted values containing commas', () => {
+  const md = `---\ntitle: "Note, with comma"\ntags: ["a, b", c]\ncategories: 'x, y', z\n---\n# Body`;
+  const result = parseFrontmatter(md);
+  assert.strictEqual(result.title, 'Note, with comma');
+  assert.deepStrictEqual([...result.tags].sort(), ['a, b', 'c'].sort());
+  assert.strictEqual(result.categories.has('x, y'), true);
+  assert.strictEqual(result.categories.has('z'), true);
+});
+
+test('parseFrontmatter parses multiline block scalars without breaking subsequent keys', () => {
+  const md = `---\ntitle: T\nsummary: |\n  line one\n  line two\ntags:\n  - alpha\n---\n# Body`;
+  const result = parseFrontmatter(md);
+  assert.strictEqual(result.properties.get('summary'), 'line one\nline two');
+  assert.strictEqual(result.tags.has('alpha'), true);
+});
+
 test('sanitizeContentForTags strips code blocks, inline code, and URLs', () => {
   const md = `# Header\nSome text with https://example.com/#anchor and \`#inlineCode\` and:\n\`\`\`javascript\nconst x = #notATag;\n\`\`\`\nValid #actualTag here.`;
   const sanitized = sanitizeContentForTags(md);

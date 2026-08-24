@@ -29,7 +29,14 @@ async function createDailyNote() {
   const dailyNotePath = path.join(dailyNoteDir, dailyNoteFilename);
 
   // Check if daily note exists
-  if (fs.existsSync(dailyNotePath)) {
+  let dailyNoteExists = false;
+  try {
+    await fs.promises.access(dailyNotePath);
+    dailyNoteExists = true;
+  } catch {
+    // does not exist
+  }
+  if (dailyNoteExists) {
     const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(dailyNotePath));
     await vscode.window.showTextDocument(doc);
     return;
@@ -37,7 +44,7 @@ async function createDailyNote() {
 
   // Ensure daily note folder exists
   try {
-    fs.mkdirSync(dailyNoteDir, { recursive: true });
+    await fs.promises.mkdir(dailyNoteDir, { recursive: true });
   } catch (err) {
     vscode.window.showErrorMessage(`MarkGarden: Failed to create daily notes directory: ${err.message}`);
     return;
@@ -48,9 +55,15 @@ async function createDailyNote() {
   const templatesDir = path.resolve(workspaceRoot, templatesFolder);
   const templatePath = path.join(templatesDir, dailyNoteTemplate);
 
-  if (fs.existsSync(templatePath)) {
+  let templateRaw = null;
+  try {
+    templateRaw = await fs.promises.readFile(templatePath, 'utf8');
+  } catch {
+    // template not found or unreadable
+  }
+
+  if (templateRaw !== null) {
     try {
-      const templateRaw = fs.readFileSync(templatePath, 'utf8');
       initialContent = processTemplate(templateRaw, dailyNoteName, now);
     } catch (err) {
       vscode.window.showWarningMessage(`MarkGarden: Failed to load/process daily template: ${err.message}`);
@@ -63,7 +76,7 @@ async function createDailyNote() {
 
   // Write file and open it
   try {
-    fs.writeFileSync(dailyNotePath, initialContent, 'utf8');
+    await fs.promises.writeFile(dailyNotePath, initialContent, 'utf8');
     const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(dailyNotePath));
     await vscode.window.showTextDocument(doc);
     vscode.window.showInformationMessage(`MarkGarden: Created today's daily note: ${dailyNoteFilename}`);

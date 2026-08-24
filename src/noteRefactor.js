@@ -134,14 +134,21 @@ async function extractSelectionToNote(indexer) {
   const targetFolder = resolveNewNoteFolder(sourceDocPath);
 
   try {
-    fs.mkdirSync(targetFolder, { recursive: true });
+    await fs.promises.mkdir(targetFolder, { recursive: true });
   } catch (err) {
     vscode.window.showErrorMessage(`MarkGarden: Failed to create folder: ${err.message}`);
     return;
   }
 
   const targetPath = path.join(targetFolder, `${title}.md`);
-  if (fs.existsSync(targetPath)) {
+  let targetExists = false;
+  try {
+    await fs.promises.access(targetPath);
+    targetExists = true;
+  } catch {
+    // does not exist
+  }
+  if (targetExists) {
     const overwrite = await vscode.window.showWarningMessage(
       `Note "${title}.md" already exists. Overwrite?`,
       { modal: true },
@@ -154,7 +161,7 @@ async function extractSelectionToNote(indexer) {
   const newNoteContent = generateRefactoredNoteContent(title, selectionText, sourceNoteName);
 
   try {
-    fs.writeFileSync(targetPath, newNoteContent, 'utf8');
+    await fs.promises.writeFile(targetPath, newNoteContent, 'utf8');
     if (indexer) {
       indexer.handleFileChange(targetPath);
     }

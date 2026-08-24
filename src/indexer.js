@@ -3,6 +3,59 @@ const fs = require('fs');
 const path = require('path');
 
 /**
+ * Strips surrounding single/double quotes from a value (if balanced).
+ */
+function stripQuotes(value) {
+  return value.replace(/^['"]|['"]$/g, '');
+}
+
+/**
+ * Splits an inline YAML-style list into entries, respecting quoted strings
+ * so values containing commas are not broken apart (e.g. `["a, b", c]`).
+ */
+function splitInlineList(val) {
+  const entries = [];
+  let current = '';
+  let quoteChar = null;
+  for (let i = 0; i < val.length; i++) {
+    const ch = val[i];
+    if (quoteChar) {
+      if (ch === quoteChar) {
+        quoteChar = null;
+      } else {
+        current += ch;
+      }
+    } else if (ch === '"' || ch === "'") {
+      quoteChar = ch;
+    } else if (ch === ',') {
+      entries.push(current.trim());
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  entries.push(current.trim());
+  return entries.map(s => stripQuotes(s)).filter(Boolean);
+}
+
+/**
+ * Parses an inline bracketed list value like [a, "b, c"] into string entries.
+ */
+function parseInlineBracketList(val) {
+  const inner = val.slice(1, -1).trim();
+  if (!inner) return [];
+  return splitInlineList(inner);
+}
+
+/**
+ * Parses a comma-separated scalar list like "a, b, c" (used for tags:, aliases:, etc.).
+ * Quoted segments containing commas are preserved as one entry.
+ */
+function parseCommaList(val) {
+  return splitInlineList(val.replace(/[[\]]/g, ''));
+}
+
+/**
  * Parses frontmatter YAML block from markdown content.
  * Returns an object with parsed properties (title, tags, categories, raw content).
  */
@@ -42,7 +95,7 @@ function parseFrontmatter(content) {
 
     // Check for list item under current key (e.g. "  - tag1")
     if (trimmed.startsWith('-') && currentKey) {
-      const itemVal = trimmed.replace(/^-\s*/, '').trim().replace(/^['"]|['"]$/g, '');
+      const itemVal = stripQuotes(trimmed.replace(/^\s*-\s*/, '').trim());
       if (itemVal) {
         if (currentKey === 'tags' || currentKey === 'tag') {
           result.tags.add(itemVal);
@@ -78,14 +131,31 @@ function parseFrontmatter(content) {
     currentKey = key;
     result.propertyKeys.add(rawKey);
 
+    // Multiline block scalars (key: | / > / |- / >-) consume the following indented lines.
+    if (/^[|>][+-]?$/.test(val)) {
+      const blockLines = [];
+      let j = i + 1;
+      for (; j < lines.length; j++) {
+        const blockLine = lines[j];
+        // Block scalar content is more indented than the key (or blank)
+        if (blockLine.trim() === '' || /^[ \t]/.test(blockLine)) {
+          blockLines.push(blockLine.trim());
+        } else {
+          break;
+        }
+      }
+      result.properties.set(key, blockLines.join('\n'));
+      i = j - 1; // skip consumed lines on next loop iteration
+      continue;
+    }
+
     if (key === 'title') {
-      const cleanVal = val.replace(/^['"]|['"]$/g, '');
+      const cleanVal = stripQuotes(val);
       result.title = cleanVal;
       result.properties.set(key, cleanVal);
     } else if (key === 'tags' || key === 'tag') {
       if (val) {
-        const cleaned = val.replace(/[[\]]/g, '');
-        const tagList = cleaned.split(',').map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+        const tagList = parseCommaList(val);
         tagList.forEach(t => result.tags.add(t));
         result.properties.set(key, tagList);
       } else {
@@ -93,8 +163,7 @@ function parseFrontmatter(content) {
       }
     } else if (key === 'categories' || key === 'category') {
       if (val) {
-        const cleaned = val.replace(/[[\]]/g, '');
-        const catList = cleaned.split(',').map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+        const catList = parseCommaList(val);
         catList.forEach(c => result.categories.add(c));
         result.properties.set(key, catList);
       } else {
@@ -102,8 +171,7 @@ function parseFrontmatter(content) {
       }
     } else if (key === 'aliases' || key === 'alias') {
       if (val) {
-        const cleaned = val.replace(/[[\]]/g, '');
-        const aliasList = cleaned.split(',').map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+        const aliasList = parseCommaList(val);
         aliasList.forEach(a => result.aliases.add(a));
         result.properties.set(key, aliasList);
       } else {
@@ -112,7 +180,7 @@ function parseFrontmatter(content) {
     } else {
       if (val) {
         if (val.startsWith('[') && val.endsWith(']')) {
-          const listVals = val.slice(1, -1).split(',').map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+          const listVals = parseInlineBracketList(val);
           result.properties.set(key, listVals);
         } else {
           result.properties.set(key, val.replace(/^['"]|['"]$/g, ''));
