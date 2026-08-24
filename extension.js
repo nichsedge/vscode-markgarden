@@ -62,8 +62,13 @@ let graphViewManager = null;
 async function activate(context) {
   // Initialize Workspace Indexer
   indexer = new WorkspaceNotesIndexer();
-  await indexer.initialize(context);
   context.subscriptions.push(indexer);
+  // Index in the background so a large vault doesn't block activation:
+  // providers and commands are registered immediately and gracefully
+  // return empty results while the index is still warming up.
+  indexer.initialize(context).catch(err => {
+    vscode.window.showErrorMessage(`MarkGarden: Failed to initialize workspace index: ${err.message}`);
+  });
 
   // Initialize Graph View Manager
   graphViewManager = new GraphViewManager(context, indexer);
@@ -198,8 +203,8 @@ async function activate(context) {
     vscode.commands.registerCommand('markgarden.renameCategory', item => renameCategoryCommand(indexer, item)),
 
     // Index & Refresh
-    vscode.commands.registerCommand('markgarden.refreshIndex', () => {
-      indexer.rebuildIndex();
+    vscode.commands.registerCommand('markgarden.refreshIndex', async () => {
+      await indexer.rebuildIndex();
       digitalGardenTreeDataProvider.refresh();
       vscode.window.showInformationMessage('MarkGarden: Refreshed workspace index.');
     }),

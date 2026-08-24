@@ -195,6 +195,17 @@ function parseFrontmatter(content) {
 }
 
 /**
+ * Masks frontmatter, fenced code blocks (``` / ~~~), and HTML comments with spaces
+ * while preserving newlines, so character offsets and line numbers stay accurate.
+ * Shared by wikilink/media extraction and unlinked-mention scanning.
+ */
+function maskExcludedRegions(content) {
+  return content
+    .replace(/^---\r?\n[\s\S]*?\r?\n---|```[\s\S]*?```|~~~[\s\S]*?~~~|<!--[\s\S]*?-->/g, m => m.replace(/[^\r\n]/g, ' '))
+    .replace(/`[^`\r\n]+`/g, m => m.replace(/[^\r\n]/g, ' '));
+}
+
+/**
  * Strips code blocks, inline code, HTML comments, frontmatter, and URLs from markdown text
  * so hashtag parsing doesn't match false positives.
  * Uses combined regex passes for performance.
@@ -413,9 +424,8 @@ function findPrimaryDocHeading(content, headings) {
  * Filters out media file attachments (images, PDFs, audio/video).
  */
 function extractWikilinks(content) {
-  // Mask frontmatter, code blocks, and comments with spaces to preserve line numbers and character offsets
-  let sanitized = content.replace(/^---\r?\n[\s\S]*?\r?\n---|```[\s\S]*?```|~~~[\s\S]*?~~~|<!--[\s\S]*?-->/g, m => m.replace(/[^\r\n]/g, ' '));
-  sanitized = sanitized.replace(/`[^`\r\n]+`/g, m => m.replace(/[^\r\n]/g, ' '));
+  // Mask frontmatter, code blocks, and comments to preserve line numbers and offsets
+  const sanitized = maskExcludedRegions(content);
 
   const links = [];
   const regex = /(!?\[\[)([^[\r\n\]]+)\]\]/g;
@@ -493,9 +503,19 @@ class WorkspaceNotesIndexer {
     this._debounceTimers = new Map(); // filePath -> timerId (per-file debouncing)
     this._disposables = [];
 
+    // Incremental backlink index: targetFilePath -> Set<sourceFilePath>.
+    // Maintained by _resolveLinksForFile so backlink queries are O(1) lookups.
+    this.backlinkIndex = new Map();
+
+    // Bounded LRU cache of recently indexed file contents (see _setContentInCache).
+    // Replaces storing raw text on every meta entry, which grew without bound.
+    this._contentCache = new Map();
+    this._contentCacheMaxSize = 250;
+
     // Cached configuration values
     this._cachedTemplatesFolder = 'templates';
     this._cachedExcludeTemplates = true;
+    this._cachedExcludeSegments = [];
     this._updateConfigCache();
 
     // Cached sorted results with dirty flag
@@ -608,9 +628,15 @@ class WorkspaceNotesIndexer {
     // Watch for configuration changes that might affect exclusions or folders
     if (vscode.workspace && typeof vscode.workspace.onDidChangeConfiguration === 'function') {
       const configDisposable = vscode.workspace.onDidChangeConfiguration(e => {
-        if (e && e.affectsConfiguration && e.affectsConfiguration('markgarden')) {
+        if (!e || typeof e.affectsConfiguration !== 'function') return;
+        // Only rebuild the full index when a setting that affects indexing changed;
+        // otherwise just refresh the lightweight config cache.
+        const reindexKeys = ['excludedFolders', 'templatesFolder', 'excludeTemplatesFromIndex'];
+        if (reindexKeys.some(key => e.affectsConfiguration(`markgarden.${key}`))) {
           this._updateConfigCache();
           this.rebuildIndex();
+        } else if (e.affectsConfiguration('markgarden')) {
+          this._updateConfigCache();
         }
       });
       this._disposables.push(configDisposable);
@@ -631,6 +657,8 @@ class WorkspaceNotesIndexer {
     this.mediaToPathIndex.clear();
     this.propertyKeyIndex.clear();
     this.propertyValueIndex.clear();
+    this.backlinkIndex.clear();
+    this._clearContentCache();
     this._invalidateCache();
 
     const config = vscode.workspace.getConfiguration('markgarden');
@@ -861,7 +889,7 @@ class WorkspaceNotesIndexer {
    */
   async updateWikilinksOnRename(oldPath, newPath) {
     if (!oldPath || !newPath) return 0;
-    if (!newPath.toLowerCase().endsWith('.md')) return 0;
+    if (!newPath.toLowerCase().endsWith(".md")) return 0;
     const oldBase = path.basename(oldPath).replace(/\.md$/i, '');
     const newBase = path.basename(newPath).replace(/\.md$/i, '');
     if (oldBase.toLowerCase() === newBase.toLowerCase()) return 0;
@@ -873,7 +901,7 @@ class WorkspaceNotesIndexer {
 
     for (const [filePath, meta] of this.fileIndex) {
       if (filePath === oldPath || !meta.links || !meta.links.length) continue;
-      const content = meta._content || '';
+      const content = (await this._getFileContent(filePath)) || '';
       if (!content.includes('[[')) continue;
 
       for (const link of meta.links) {
@@ -942,6 +970,57 @@ class WorkspaceNotesIndexer {
   }
 
   /**
+   * Clears the bounded file-content LRU cache.
+   */
+  _clearContentCache() {
+    this._contentCache.clear();
+  }
+
+  /**
+   * Stores file content in the bounded LRU cache (most recently used refreshed).
+   */
+  _setContentInCache(filePath, content) {
+    if (!filePath || typeof content !== 'string') return;
+    if (this._contentCache.has(filePath)) {
+      this._contentCache.delete(filePath);
+    }
+    if (this._contentCache.size >= this._contentCacheMaxSize) {
+      const oldest = this._contentCache.keys().next().value;
+      this._contentCache.delete(oldest);
+    }
+    this._contentCache.set(filePath, content);
+  }
+
+  /**
+   * Fetches a file's content, preferring the LRU cache over disk reads.
+   * Returns null when the file cannot be read.
+   */
+  async _getFileContent(filePath) {
+    if (this._contentCache.has(filePath)) {
+      const cached = this._contentCache.get(filePath);
+      // Refresh recency
+      this._contentCache.delete(filePath);
+      this._contentCache.set(filePath, cached);
+      return cached;
+    }
+    try {
+      const content = await fs.promises.readFile(filePath, 'utf8');
+      this._setContentInCache(filePath, content);
+      return content;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Fetches a file's content split into lines via the LRU cache.
+   */
+  async _getFileLines(filePath) {
+    const content = await this._getFileContent(filePath);
+    return content === null ? [] : content.split(/\r?\n/);
+  }
+
+  /**
    * Check if a path matches common exclusion directories.
    */
   _shouldIgnore(filePath) {
@@ -1003,10 +1082,13 @@ class WorkspaceNotesIndexer {
       blocks,
       blockMap,
       resolvedLinks: [], // populated by _resolveLinksForFile
-      resolvedMediaLinks: [], // populated by _resolveLinksForFile
-      _content: content
+      resolvedLinkTargets: [], // populated by _resolveLinksForFile (drives backlinkIndex)
+      resolvedMediaLinks: [] // populated by _resolveLinksForFile
     };
     this.fileIndex.set(filePath, meta);
+
+    // Retain content only in the bounded LRU cache instead of on every meta entry
+    this._setContentInCache(filePath, content);
 
     // Inverted index for frontmatter properties & values
     if (frontmatter.properties) {
@@ -1123,13 +1205,35 @@ class WorkspaceNotesIndexer {
     const meta = this.fileIndex.get(filePath);
     if (!meta) return;
 
+    // Remove this file's previous outbound resolutions from the backlink index
+    if (Array.isArray(meta.resolvedLinkTargets)) {
+      for (const prevTarget of meta.resolvedLinkTargets) {
+        const sourceSet = this.backlinkIndex.get(prevTarget);
+        if (sourceSet) {
+          sourceSet.delete(filePath);
+          if (sourceSet.size === 0) this.backlinkIndex.delete(prevTarget);
+        }
+      }
+    }
+
     meta.resolvedLinks = [];
+    const targets = new Set();
     for (const link of meta.links) {
       if (!link.targetNote) continue;
       const targetPath = this.resolveNotePath(link.targetNote, filePath);
       if (targetPath) {
         meta.resolvedLinks.push({ link, targetPath });
+        targets.add(targetPath);
       }
+    }
+    meta.resolvedLinkTargets = Array.from(targets);
+
+    // Maintain the incremental backlink index: target -> Set<source>
+    for (const targetPath of targets) {
+      if (!this.backlinkIndex.has(targetPath)) {
+        this.backlinkIndex.set(targetPath, new Set());
+      }
+      this.backlinkIndex.get(targetPath).add(filePath);
     }
 
     meta.resolvedMediaLinks = [];
@@ -1184,6 +1288,17 @@ class WorkspaceNotesIndexer {
             this.propertyKeyIndex.delete(key);
             this.propertyValueIndex.delete(key);
           }
+        }
+      }
+    }
+
+    // Remove this file's outbound resolutions from the incremental backlink index
+    if (Array.isArray(existing.resolvedLinkTargets)) {
+      for (const prevTarget of existing.resolvedLinkTargets) {
+        const sourceSet = this.backlinkIndex.get(prevTarget);
+        if (sourceSet) {
+          sourceSet.delete(filePath);
+          if (sourceSet.size === 0) this.backlinkIndex.delete(prevTarget);
         }
       }
     }
@@ -1572,30 +1687,27 @@ class WorkspaceNotesIndexer {
       return [];
     }
 
+    // O(1) lookup via the incremental backlink index instead of scanning every file
+    const sourcePaths = this.backlinkIndex.get(targetFilePath);
+    if (!sourcePaths || sourcePaths.size === 0) {
+      return [];
+    }
+
     const backlinks = [];
 
-    for (const [sourcePath, meta] of this.fileIndex.entries()) {
-      if (sourcePath === targetFilePath) continue;
+    for (const sourcePath of sourcePaths) {
+      const meta = this.fileIndex.get(sourcePath);
+      if (!meta) continue;
 
       const matchingResolved = (meta.resolvedLinks || []).filter(r => r.targetPath === targetFilePath);
       if (matchingResolved.length === 0) continue;
 
-      let fileLines = null;
-      if (meta._content) {
-        fileLines = meta._content.split(/\r?\n/);
-      } else {
-        try {
-          const content = await fs.promises.readFile(sourcePath, 'utf8');
-          fileLines = content.split(/\r?\n/);
-        } catch {
-          fileLines = [];
-        }
-      }
+      const fileLines = await this._getFileLines(sourcePath);
 
       const snippets = [];
       for (const { link } of matchingResolved) {
         const lineIdx = link.line !== undefined ? link.line : 0;
-        const lineText = fileLines && fileLines[lineIdx] !== undefined ? fileLines[lineIdx].trim() : `[[${link.raw}]]`;
+        const lineText = fileLines.length > 0 && fileLines[lineIdx] !== undefined ? fileLines[lineIdx].trim() : `[[${link.raw}]]`;
         snippets.push({
           line: lineIdx,
           lineText,
@@ -1610,6 +1722,9 @@ class WorkspaceNotesIndexer {
         snippets
       });
     }
+
+    // Deterministic ordering regardless of internal Map insertion order
+    backlinks.sort((a, b) => a.title.localeCompare(b.title));
 
     return backlinks;
   }
@@ -1651,17 +1766,12 @@ class WorkspaceNotesIndexer {
     for (const [sourcePath, meta] of this.fileIndex.entries()) {
       if (sourcePath === targetFilePath) continue;
 
-      let content = meta._content;
-      if (!content) {
-        try {
-          content = await fs.promises.readFile(sourcePath, 'utf8');
-        } catch {
-          continue;
-        }
-      }
+      const content = await this._getFileContent(sourcePath);
+      if (content === null) continue;
 
-      let sanitized = content.replace(/^---\r?\n[\s\S]*?\r?\n---|```[\s\S]*?```|~~~[\s\S]*?~~~|<!--[\s\S]*?-->/g, m => m.replace(/[^\r\n]/g, ' '));
-      sanitized = sanitized.replace(/`[^`\r\n]+`/g, m => m.replace(/[^\r\n]/g, ' '));
+      // Mask regions that cannot contain mentions (frontmatter/code/comments),
+      // then hide existing wikilinks and headings — spaces keep line numbers accurate.
+      let sanitized = maskExcludedRegions(content);
       sanitized = sanitized.replace(/\[\[[^[\r\n\]]+\]\]/g, m => m.replace(/[^\r\n]/g, ' '));
       sanitized = sanitized.replace(/^[ \t]*#{1,6}[ \t]+.*$/gm, m => m.replace(/[^\r\n]/g, ' '));
 
@@ -1741,6 +1851,8 @@ class WorkspaceNotesIndexer {
     this.normalizedTitleIndex.clear();
     this.propertyKeyIndex.clear();
     this.propertyValueIndex.clear();
+    this.backlinkIndex.clear();
+    this._clearContentCache();
     this._cachedTags = null;
     this._cachedCategories = null;
   }
@@ -1758,5 +1870,6 @@ module.exports = {
   parseWikilinkTarget,
   findPrimaryDocHeading,
   isMediaFile,
-  sanitizeContentForTags
+  sanitizeContentForTags,
+  maskExcludedRegions
 };

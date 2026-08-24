@@ -106,27 +106,28 @@ function resolveNewNoteFolder(sourceFilePath) {
 /**
  * Recursively searches a directory for a file matching filename (up to maxDepth).
  */
-function findFileRecursive(dir, filename, maxDepth = 4, currentDepth = 0) {
+async function findFileRecursive(dir, filename, maxDepth = 4, currentDepth = 0) {
   if (!dir || currentDepth > maxDepth) return null;
+  let entries;
   try {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isFile() && entry.name.toLowerCase() === filename.toLowerCase()) {
-        return path.join(dir, entry.name);
-      }
-    }
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        const name = entry.name;
-        if (name === 'node_modules' || name === '.git' || name === '.vscode' || name === 'dist' || name === 'out' || name === 'vendor') {
-          continue;
-        }
-        const found = findFileRecursive(path.join(dir, name), filename, maxDepth, currentDepth + 1);
-        if (found) return found;
-      }
-    }
+    entries = await fs.promises.readdir(dir, { withFileTypes: true });
   } catch {
-    // ignore
+    return null;
+  }
+  for (const entry of entries) {
+    if (entry.isFile() && entry.name.toLowerCase() === filename.toLowerCase()) {
+      return path.join(dir, entry.name);
+    }
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      const name = entry.name;
+      if (name === 'node_modules' || name === '.git' || name === '.vscode' || name === 'dist' || name === 'out' || name === 'vendor') {
+        continue;
+      }
+      const found = await findFileRecursive(path.join(dir, name), filename, maxDepth, currentDepth + 1);
+      if (found) return found;
+    }
   }
   return null;
 }
@@ -134,7 +135,7 @@ function findFileRecursive(dir, filename, maxDepth = 4, currentDepth = 0) {
 /**
  * Resolves media file path (images, audio, video, PDF) in workspace.
  */
-function resolveMediaFilePath(mediaTarget, sourceFilePath, indexer = null) {
+async function resolveMediaFilePath(mediaTarget, sourceFilePath, indexer = null) {
   if (!mediaTarget) return null;
   let cleanTarget = mediaTarget.trim();
   const pipeIdx = cleanTarget.indexOf('|');
@@ -148,16 +149,22 @@ function resolveMediaFilePath(mediaTarget, sourceFilePath, indexer = null) {
     if (indexedPath) return indexedPath;
   }
 
+  // Async file check to avoid blocking the extension host thread
+  const isFile = async candidate => {
+    try {
+      const stat = await fs.promises.stat(candidate);
+      return stat.isFile();
+    } catch {
+      return false;
+    }
+  };
+
   // 2. Direct check relative to source file directory
   if (sourceFilePath) {
     const sourceDir = path.dirname(sourceFilePath);
     const relativeCandidate = path.resolve(sourceDir, cleanTarget);
-    try {
-      if (fs.existsSync(relativeCandidate) && fs.statSync(relativeCandidate).isFile()) {
-        return relativeCandidate;
-      }
-    } catch {
-      // ignore
+    if (await isFile(relativeCandidate)) {
+      return relativeCandidate;
     }
   }
 
@@ -178,17 +185,13 @@ function resolveMediaFilePath(mediaTarget, sourceFilePath, indexer = null) {
     ];
 
     for (const cand of candidates) {
-      try {
-        if (fs.existsSync(cand) && fs.statSync(cand).isFile()) {
-          return cand;
-        }
-      } catch {
-        // ignore
+      if (await isFile(cand)) {
+        return cand;
       }
     }
 
     // 4. Recursive search fallback in workspace
-    const recursiveMatch = findFileRecursive(rootPath, cleanBase);
+    const recursiveMatch = await findFileRecursive(rootPath, cleanBase);
     if (recursiveMatch) return recursiveMatch;
   }
 
@@ -204,10 +207,11 @@ class MarkGardenDocumentLinkProvider {
     this.indexer = indexer;
   }
 
-  provideDocumentLinks(document) {
+  async provideDocumentLinks(document) {
     const links = findWikilinksInDocument(document);
 
-    return links.map(item => {
+    const docLinks = [];
+    for (const item of links) {
       const parsed = parseWikilinkTarget(item.target);
 
       // Encode arguments for command URI
@@ -220,7 +224,7 @@ class MarkGardenDocumentLinkProvider {
       const docLink = new vscode.DocumentLink(item.range, linkUri);
 
       if (parsed.isMedia) {
-        const mediaPath = resolveMediaFilePath(parsed.targetNote, document.fileName, this.indexer);
+        const mediaPath = await resolveMediaFilePath(parsed.targetNote, document.fileName, this.indexer);
         docLink.tooltip = mediaPath
           ? `Open media file "${parsed.targetNote}" (Ctrl/Cmd+Click)`
           : `Media file "${parsed.targetNote}" (not found)`;
@@ -238,8 +242,9 @@ class MarkGardenDocumentLinkProvider {
       docLink.tooltip = targetPath
         ? `Open "${parsed.targetNote || path.basename(document.fileName, '.md')}"${anchorText} (Ctrl/Cmd+Click)`
         : `Create "${parsed.targetNote}" (Ctrl/Cmd+Click)`;
-      return docLink;
-    });
+      docLinks.push(docLink);
+    }
+    return docLinks;
   }
 }
 
@@ -251,7 +256,7 @@ class MarkGardenDefinitionProvider {
     this.indexer = indexer;
   }
 
-  provideDefinition(document, position) {
+  async provideDefinition(document, position) {
     const link = getWikilinkAtPosition(document, position);
     if (!link) return null;
 
@@ -260,10 +265,10 @@ class MarkGardenDefinitionProvider {
     if (parsed.isMedia) {
       const mediaPath = this.indexer.resolveMediaPath
         ? this.indexer.resolveMediaPath(parsed.targetNote, document.fileName)
-        : resolveMediaFilePath(parsed.targetNote, document.fileName);
+        : await resolveMediaFilePath(parsed.targetNote, document.fileName);
       if (mediaPath) {
         try {
-          fs.accessSync(mediaPath);
+          await fs.promises.access(mediaPath);
           return new vscode.Location(vscode.Uri.file(mediaPath), new vscode.Position(0, 0));
         } catch {
           return null;
@@ -278,9 +283,9 @@ class MarkGardenDefinitionProvider {
 
     if (!targetPath) return null;
 
-    // Use fs.accessSync instead of existsSync — throws on missing
+    // Async existence check to avoid blocking the extension host thread
     try {
-      fs.accessSync(targetPath);
+      await fs.promises.access(targetPath);
     } catch {
       return null;
     }
@@ -294,7 +299,7 @@ class MarkGardenDefinitionProvider {
         targetLine = targetMeta.blockMap.get(cleanBlockId).line;
       } else {
         try {
-          const content = fs.readFileSync(targetPath, 'utf8');
+          const content = await fs.promises.readFile(targetPath, 'utf8');
           const lines = content.split(/\r?\n/);
           const blockRegex = new RegExp(`(?:^|[ \\t]+)\\^${cleanBlockId}[ \\t]*$`, 'i');
           for (let i = 0; i < lines.length; i++) {
@@ -316,7 +321,7 @@ class MarkGardenDefinitionProvider {
         }
       } else {
         try {
-          const content = fs.readFileSync(targetPath, 'utf8');
+          const content = await fs.promises.readFile(targetPath, 'utf8');
           const headings = extractHeadings(content);
           const headingMatch = headings.find(h => h.text.toLowerCase() === parsed.heading.toLowerCase());
           if (headingMatch) {
@@ -343,7 +348,7 @@ class MarkGardenCompletionItemProvider {
     this.indexer = indexer;
   }
 
-  provideCompletionItems(document, position) {
+  async provideCompletionItems(document, position) {
     const linePrefix = document.lineAt(position).text.substr(0, position.character);
     const lastOpenBracket = linePrefix.lastIndexOf('[[');
     if (lastOpenBracket === -1) return undefined;
@@ -391,8 +396,8 @@ class MarkGardenCompletionItemProvider {
 
         if (!fileHeadings) {
           try {
-            fs.accessSync(targetFile);
-            const content = fs.readFileSync(targetFile, 'utf8');
+            await fs.promises.access(targetFile);
+            const content = await fs.promises.readFile(targetFile, 'utf8');
             const { extractBlockReferences } = require('./indexer');
             fileHeadings = extractHeadings(content);
             fileBlocks = fileBlocks || extractBlockReferences(content);
@@ -510,7 +515,7 @@ async function navigateWikilink(targetStr, sourceFilePath, indexer) {
 
   // If target is a media attachment (e.g. image, video, pdf), open media file directly
   if (parsed.isMedia) {
-    const mediaPath = resolveMediaFilePath(parsed.targetNote, sourceFilePath, indexer);
+    const mediaPath = await resolveMediaFilePath(parsed.targetNote, sourceFilePath, indexer);
     if (mediaPath) {
       vscode.commands.executeCommand('vscode.open', vscode.Uri.file(mediaPath));
     } else {

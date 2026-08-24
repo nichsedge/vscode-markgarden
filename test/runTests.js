@@ -36,7 +36,10 @@ Module.prototype.require = function(path) {
         getWorkspaceFolder: () => null,
         getConfiguration: () => ({ get: (k, d) => d }),
         applyEdit: (edit) => {
-          Module.prototype.__appliedWorkspaceEdits = edit.edits;
+          if (!Array.isArray(Module.prototype.__appliedWorkspaceBatches)) {
+            Module.prototype.__appliedWorkspaceBatches = [];
+          }
+          Module.prototype.__appliedWorkspaceBatches.push(edit.edits);
           return Promise.resolve(true);
         }
       },
@@ -118,17 +121,22 @@ const {
 
 let testsPassed = 0;
 let testsFailed = 0;
+let testChain = Promise.resolve();
 
 function test(name, fn) {
-  try {
-    fn();
-    console.log(`  ✓ ${name}`);
-    testsPassed++;
-  } catch (err) {
-    console.error(`  ✗ ${name}`);
-    console.error(`    ${err.message}`);
-    testsFailed++;
-  }
+  // Queue every test body so async tests execute strictly sequentially
+  // (parallel execution would race on shared indexer/mock state).
+  testChain = testChain.then(async () => {
+    try {
+      await fn();
+      console.log(`  ✓ ${name}`);
+      testsPassed++;
+    } catch (err) {
+      console.error(`  ✗ ${name}`);
+      console.error(`    ${err.message}`);
+      testsFailed++;
+    }
+  });
 }
 
 console.log('Running MarkGarden Unit Tests...\n');
@@ -832,7 +840,7 @@ Body`;
   assert.strictEqual(updated.includes('Body'), true);
 });
 
-test('FrontmatterCompletionProvider provides keys, tags, wikilinks, dates, and values', () => {
+test('FrontmatterCompletionProvider provides keys, tags, wikilinks, dates, and values', async () => {
   const indexer = new WorkspaceNotesIndexer();
   indexer.indexFileContent('/workspace/note1.md', '---\ntitle: First\nstatus: in-review\ntags: [review, book]\n---\n# Note');
   indexer.indexFileContent('/workspace/note2.md', '---\ntitle: Second\nstatus: completed\ntags: [review]\n---\n# Note 2');
@@ -844,7 +852,7 @@ test('FrontmatterCompletionProvider provides keys, tags, wikilinks, dates, and v
     getText: () => '---\n\n---\nBody',
     lineAt: () => ({ text: '' })
   };
-  const keyCompletions = provider.provideCompletionItems(mockDocKeys, { line: 1, character: 0 });
+  const keyCompletions = await provider.provideCompletionItems(mockDocKeys, { line: 1, character: 0 });
   assert.strictEqual(keyCompletions.length > 0, true);
   const labels = keyCompletions.map(c => c.label);
   assert.strictEqual(labels.includes('title'), true);
@@ -856,7 +864,7 @@ test('FrontmatterCompletionProvider provides keys, tags, wikilinks, dates, and v
     getText: () => '---\ntags: \n---\nBody',
     lineAt: (l) => ({ text: l === 1 ? 'tags: ' : '---\n' })
   };
-  const tagCompletions = provider.provideCompletionItems(mockDocTags, { line: 1, character: 6 });
+  const tagCompletions = await provider.provideCompletionItems(mockDocTags, { line: 1, character: 6 });
   assert.strictEqual(tagCompletions.length >= 2, true);
   const tagLabels = tagCompletions.map(c => c.label);
   assert.strictEqual(tagLabels.includes('review'), true);
@@ -867,7 +875,7 @@ test('FrontmatterCompletionProvider provides keys, tags, wikilinks, dates, and v
     getText: () => '---\nstatus: \n---\nBody',
     lineAt: (l) => ({ text: l === 1 ? 'status: ' : '---\n' })
   };
-  const statusCompletions = provider.provideCompletionItems(mockDocStatus, { line: 1, character: 8 });
+  const statusCompletions = await provider.provideCompletionItems(mockDocStatus, { line: 1, character: 8 });
   assert.strictEqual(statusCompletions.length >= 2, true);
   const statusLabels = statusCompletions.map(c => c.label);
   assert.strictEqual(statusLabels.includes('in-review'), true);
@@ -878,7 +886,7 @@ test('FrontmatterCompletionProvider provides keys, tags, wikilinks, dates, and v
     getText: () => '---\nup: "[[\n---\nBody',
     lineAt: (l) => ({ text: l === 1 ? 'up: "[[' : '---\n' })
   };
-  const linkCompletions = provider.provideCompletionItems(mockDocWikilink, { line: 1, character: 7 });
+  const linkCompletions = await provider.provideCompletionItems(mockDocWikilink, { line: 1, character: 7 });
   assert.strictEqual(linkCompletions.length >= 2, true);
   const noteNames = linkCompletions.map(c => c.label);
   assert.strictEqual(noteNames.includes('note1'), true);
@@ -889,7 +897,7 @@ test('FrontmatterCompletionProvider provides keys, tags, wikilinks, dates, and v
     getText: () => '---\ndate: \n---\nBody',
     lineAt: (l) => ({ text: l === 1 ? 'date: ' : '---\n' })
   };
-  const dateCompletions = provider.provideCompletionItems(mockDocDate, { line: 1, character: 6 });
+  const dateCompletions = await provider.provideCompletionItems(mockDocDate, { line: 1, character: 6 });
   assert.strictEqual(dateCompletions.length >= 3, true);
 });
 
@@ -1037,11 +1045,13 @@ test('updateWikilinksOnRename rewrites links pointing at the renamed note', asyn
   indexer.indexFileContent('/vault/b.md', `---\ntitle: B\n---\nContent`);
   indexer.indexFileContent('/vault/a.md', `Links: [[b]] and [[b|alias]] and [[b#Section]] but not [[c]].`);
 
-  Module.prototype.__appliedWorkspaceEdits = null;
+  const batchIndexBefore = (Module.prototype.__appliedWorkspaceBatches || []).length;
   const count = await indexer.updateWikilinksOnRename('/vault/b.md', '/vault/renamed-b.md');
 
   assert.strictEqual(count, 3);
-  const edits = Module.prototype.__appliedWorkspaceEdits || [];
+  const batches = Module.prototype.__appliedWorkspaceBatches || [];
+  assert.strictEqual(batches.length, batchIndexBefore + 1);
+  const edits = batches[batchIndexBefore];
   assert.strictEqual(edits.length, 3);
   assert.deepStrictEqual(edits.map(e => e.text), ['renamed-b', 'renamed-b', 'renamed-b']);
 });
@@ -1050,12 +1060,12 @@ test('updateWikilinksOnRename ignores unrelated renames and non-markdown files',
   const indexer = new WorkspaceNotesIndexer();
   indexer.indexFileContent('/vault/b.md', `[[a]]`);
 
-  Module.prototype.__appliedWorkspaceEdits = null;
+  const batchCountBefore = (Module.prototype.__appliedWorkspaceBatches || []).length;
   // Renaming a note nobody links to
   assert.strictEqual(await indexer.updateWikilinksOnRename('/vault/b.md', '/vault/b2.md'), 0);
   // Non-markdown target
   assert.strictEqual(await indexer.updateWikilinksOnRename('/vault/a.png', '/vault/b.png'), 0);
-  assert.strictEqual(Module.prototype.__appliedWorkspaceEdits, null);
+  assert.strictEqual((Module.prototype.__appliedWorkspaceBatches || []).length, batchCountBefore);
 });
 
 // --- Obsidian Callouts Tests ---
@@ -1202,7 +1212,7 @@ test('WorkspaceNotesIndexer handles real-time media file addition, deletion, and
   assert.strictEqual(indexer.getAllMediaFiles().some(m => m.baseName === 'diagram.png'), false);
 });
 
-test('MarkGardenCompletionItemProvider provides live autocompletions for active note titles, aliases, headings, and blocks', () => {
+test('MarkGardenCompletionItemProvider provides live autocompletions for active note titles, aliases, headings, and blocks', async () => {
   const indexer = new WorkspaceNotesIndexer();
   indexer.indexFileContent('/vault/Alpha.md', '---\ntitle: "Alpha Note"\naliases: ["Alpha Alias"]\n---\n# Topic A\nSome text ^block1');
   indexer.handleFileChange('/vault/diagram.png');
@@ -1215,7 +1225,7 @@ test('MarkGardenCompletionItemProvider provides live autocompletions for active 
     lineAt: () => ({ text: 'Link to [[' }),
     getText: () => 'Link to [['
   };
-  const items = provider.provideCompletionItems(mockDoc, { line: 0, character: 11 });
+  const items = await provider.provideCompletionItems(mockDoc, { line: 0, character: 11 });
   assert.strictEqual(items.some(i => i.label === 'Alpha'), true);
   assert.strictEqual(items.some(i => i.label === 'Alpha Note'), true);
   assert.strictEqual(items.some(i => i.label === 'Alpha Alias'), true);
@@ -1227,7 +1237,7 @@ test('MarkGardenCompletionItemProvider provides live autocompletions for active 
     lineAt: () => ({ text: 'Link to [[Alpha#' }),
     getText: () => 'Link to [[Alpha#'
   };
-  const headingItems = provider.provideCompletionItems(mockHeadingDoc, { line: 0, character: 16 });
+  const headingItems = await provider.provideCompletionItems(mockHeadingDoc, { line: 0, character: 16 });
   assert.strictEqual(headingItems.some(i => i.label === 'Topic A'), true);
 
   // 3. Block reference completion inside [[Alpha#^
@@ -1236,11 +1246,11 @@ test('MarkGardenCompletionItemProvider provides live autocompletions for active 
     lineAt: () => ({ text: 'Link to [[Alpha#^' }),
     getText: () => 'Link to [[Alpha#^'
   };
-  const blockItems = provider.provideCompletionItems(mockBlockDoc, { line: 0, character: 17 });
+  const blockItems = await provider.provideCompletionItems(mockBlockDoc, { line: 0, character: 17 });
   assert.strictEqual(blockItems.some(i => i.label === '^block1'), true);
 });
 
-test('MarkGardenDocumentLinkProvider dynamically resolves updated targets without stale cache', () => {
+test('MarkGardenDocumentLinkProvider dynamically resolves updated targets without stale cache', async () => {
   const indexer = new WorkspaceNotesIndexer();
   indexer.indexFileContent('/vault/Target.md', '# Target Note\nContent');
 
@@ -1253,19 +1263,22 @@ test('MarkGardenDocumentLinkProvider dynamically resolves updated targets withou
     uri: { toString: () => 'file:///vault/Source.md' }
   };
 
-  const links1 = provider.provideDocumentLinks(doc);
+  const links1 = await provider.provideDocumentLinks(doc);
   assert.strictEqual(links1.length, 1);
   assert.strictEqual(links1[0].tooltip.includes('Open "Target"'), true);
 
   // Now delete Target.md and verify tooltip reflects "Create" rather than stale "Open"
   indexer.handleFileDelete('/vault/Target.md');
-  const links2 = provider.provideDocumentLinks(doc);
+  const links2 = await provider.provideDocumentLinks(doc);
   assert.strictEqual(links2.length, 1);
   assert.strictEqual(links2[0].tooltip.includes('Create "Target"'), true);
 });
 
-console.log(`\nResults: ${testsPassed} passed, ${testsFailed} failed.`);
-if (testsFailed > 0) {
-  process.exit(1);
-}
+// Run queued tests sequentially, then report results
+testChain.then(() => {
+  console.log(`\nResults: ${testsPassed} passed, ${testsFailed} failed.`);
+  if (testsFailed > 0) {
+    process.exit(1);
+  }
+});
 

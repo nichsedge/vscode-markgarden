@@ -91,7 +91,7 @@ class MarkGardenHoverProvider {
     this.indexer = indexer;
   }
 
-  provideHover(document, position) {
+  async provideHover(document, position) {
     const config = vscode.workspace.getConfiguration('markgarden');
     const enabled = config.get('hoverPreviewEnabled', true);
     if (!enabled) return null;
@@ -105,17 +105,27 @@ class MarkGardenHoverProvider {
     if (parsed.isMedia) {
       const mediaPath = (this.indexer && this.indexer.resolveMediaPath)
         ? this.indexer.resolveMediaPath(parsed.targetNote, document.fileName)
-        : resolveMediaFilePath(parsed.targetNote, document.fileName);
+        : await resolveMediaFilePath(parsed.targetNote, document.fileName);
       const md = new vscode.MarkdownString();
       md.isTrusted = true;
       md.supportHtml = true;
 
-      if (mediaPath && fs.existsSync(mediaPath)) {
+      let mediaExists = false;
+      if (mediaPath) {
+        try {
+          await fs.promises.access(mediaPath);
+          mediaExists = true;
+        } catch {
+          mediaExists = false;
+        }
+      }
+
+      if (mediaExists) {
         const ext = path.extname(mediaPath).toLowerCase();
         const imageExts = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico'];
         let sizeStr = '';
         try {
-          const stat = fs.statSync(mediaPath);
+          const stat = await fs.promises.stat(mediaPath);
           sizeStr = ` \`${formatFileSize(stat.size)}\``;
         } catch {
           // ignore
@@ -144,7 +154,16 @@ class MarkGardenHoverProvider {
     const maxLength = config.get('hoverPreviewMaxLength', 1200);
 
     // Non-existent note preview
-    if (!targetPath || !fs.existsSync(targetPath)) {
+    let targetExists = false;
+    if (targetPath) {
+      try {
+        await fs.promises.access(targetPath);
+        targetExists = true;
+      } catch {
+        targetExists = false;
+      }
+    }
+    if (!targetExists) {
       const md = new vscode.MarkdownString();
       md.isTrusted = true;
       const noteName = parsed.targetNote || 'Note';
@@ -158,7 +177,7 @@ class MarkGardenHoverProvider {
 
     // Existing note preview
     try {
-      const content = fs.readFileSync(targetPath, 'utf8');
+      const content = await fs.promises.readFile(targetPath, 'utf8');
       const md = buildNotePreviewMarkdown(targetPath, parsed, content, maxLength);
       return new vscode.Hover(md, link.range);
     } catch {
