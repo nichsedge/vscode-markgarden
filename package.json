@@ -2,7 +2,7 @@
   "name": "markgarden",
   "displayName": "MarkGarden: Digital Garden & PKM",
   "description": "Obsidian-like daily notes, template insertion, Wikilinks navigation, category/tag management, and interactive graph view for digital garden workspaces.",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "publisher": "al",
   "author": {
     "name": "Al"
@@ -17,7 +17,7 @@
   },
   "homepage": "https://github.com/nichsedge/vscode-markgarden#readme",
   "engines": {
-    "vscode": "^1.75.0"
+    "vscode": "^1.101.0"
   },
   "categories": [
     "Other",
@@ -210,7 +210,7 @@
       },
       {
         "command": "markgarden.setGrowthStage",
-        "title": "Set Growth Stage (🌱/🌿/🌲)",
+        "title": "Set Growth Stage (\ud83c\udf31/\ud83c\udf3f/\ud83c\udf32)",
         "category": "MarkGarden",
         "icon": "$(symbol-event)"
       },
@@ -507,7 +507,7 @@
         "markgarden.digitalGarden.growthProperty": {
           "type": "string",
           "default": "growth",
-          "description": "Frontmatter property key used for note growth stages: seedling 🌱, budding 🌿, evergreen 🌲 (e.g. 'growth', 'stage', 'status')."
+          "description": "Frontmatter property key used for note growth stages: seedling \ud83c\udf31, budding \ud83c\udf3f, evergreen \ud83c\udf32 (e.g. 'growth', 'stage', 'status')."
         },
         "markgarden.digitalGarden.enableDiagnostics": {
           "type": "boolean",
@@ -525,6 +525,15 @@
           "description": "Highlight Obsidian Callouts / Admonitions (> [!note]) in the editor with custom tint and borders."
         }
       }
-    }
+    },
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "markgarden.mcpServer",
+        "label": "MarkGarden"
+      }
+    ]
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0"
   }
 }

@@ -52,6 +52,7 @@ const {
 } = require('./src/callouts');
 
 const { registerMarkdownItWikilinks } = require('./src/markdownItPlugin');
+const { registerMcpSupport } = require('./src/mcpProvider');
 
 let indexer = null;
 let graphViewManager = null;
@@ -148,6 +149,10 @@ async function activate(context) {
     digitalGardenDiagnosticsProvider,
     calloutEditorDecorator
   );
+
+  // Register embedded MCP server so AI agents (Copilot agent mode, etc.)
+  // can answer "what can I do with MarkGarden?" and query the vault.
+  registerMcpSupport(context);
 
   // Register Commands
   const commands = [
