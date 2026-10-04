@@ -1,13 +1,13 @@
-const vscode = require('vscode');
-const { WorkspaceNotesIndexer } = require('./src/indexer');
-const {
+import * as vscode from 'vscode';
+import { WorkspaceNotesIndexer } from './indexer';
+import {
   MarkGardenDocumentLinkProvider,
   MarkGardenDefinitionProvider,
   MarkGardenCompletionItemProvider,
   openLinkAtCursor,
   navigateWikilink
-} = require('./src/wikilinks');
-const {
+} from './wikilinks';
+import {
   TagsTreeDataProvider,
   CategoriesTreeDataProvider,
   MarkGardenHashtagCompletionItemProvider,
@@ -19,15 +19,15 @@ const {
   findNotesByCategory,
   renameTagCommand,
   renameCategoryCommand
-} = require('./src/tagsCategories');
-const { insertTemplate, formatDateTime, processTemplate, parseTemplateMetadata } = require('./src/templates');
-const { createDailyNote } = require('./src/dailyNotes');
-const { GraphViewManager } = require('./src/graphView');
-const { BacklinksTreeDataProvider, convertUnlinkedMentionToWikilinkCommand } = require('./src/backlinks');
-const { MarkGardenHoverProvider } = require('./src/hoverProvider');
-const { extractSelectionToNote } = require('./src/noteRefactor');
+} from './tagsCategories';
+import { insertTemplate, formatDateTime, processTemplate, parseTemplateMetadata } from './templates';
+import { createDailyNote } from './dailyNotes';
+import { GraphViewManager } from './graphView';
+import { BacklinksTreeDataProvider, convertUnlinkedMentionToWikilinkCommand } from './backlinks';
+import { MarkGardenHoverProvider } from './hoverProvider';
+import { extractSelectionToNote } from './noteRefactor';
 
-const {
+import {
   FrontmatterCompletionProvider,
   registerFrontmatterSaveHandler,
   addPropertyCommand,
@@ -35,39 +35,39 @@ const {
   renamePropertyWorkspaceCommand,
   convertInlineTagsToFrontmatterCommand,
   syncTitleWithFilenameCommand
-} = require('./src/frontmatter');
+} from './frontmatter';
 
-const {
+import {
   DigitalGardenTreeDataProvider,
   DigitalGardenStatusBarManager,
   DigitalGardenDiagnosticsProvider,
   togglePublishStatusCommand,
   setGrowthStageCommand,
   runGardenAuditCommand
-} = require('./src/digitalGarden');
+} from './digitalGarden';
 
-const {
+import {
   insertCalloutCommand,
   CalloutEditorDecorator
-} = require('./src/callouts');
+} from './callouts';
 
-const { registerMarkdownItWikilinks } = require('./src/markdownItPlugin');
-const { registerMcpSupport } = require('./src/mcpProvider');
+import { registerMarkdownItWikilinks } from './markdownItPlugin';
+import { registerMcpSupport } from './mcpProvider';
 
-let indexer = null;
-let graphViewManager = null;
+let indexer: WorkspaceNotesIndexer | null = null;
+let graphViewManager: GraphViewManager | null = null;
 
 /**
  * Activates the MarkGarden extension.
  */
-async function activate(context) {
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
   // Initialize Workspace Indexer
   indexer = new WorkspaceNotesIndexer();
   context.subscriptions.push(indexer);
   // Index in the background so a large vault doesn't block activation:
   // providers and commands are registered immediately and gracefully
   // return empty results while the index is still warming up.
-  indexer.initialize(context).catch(err => {
+  indexer.initialize(context).catch((err: any) => {
     vscode.window.showErrorMessage(`MarkGarden: Failed to initialize workspace index: ${err.message}`);
   });
 
@@ -76,7 +76,7 @@ async function activate(context) {
   context.subscriptions.push(graphViewManager);
 
   // Markdown document selector
-  const markdownSelector = { language: 'markdown', scheme: 'file' };
+  const markdownSelector: vscode.DocumentSelector = { language: 'markdown', scheme: 'file' };
 
   // Register Language Feature Providers
   const docLinkProvider = new MarkGardenDocumentLinkProvider(indexer);
@@ -177,12 +177,12 @@ async function activate(context) {
     vscode.commands.registerCommand('markgarden.insertCallout', () => insertCalloutCommand()),
 
     // Graph View
-    vscode.commands.registerCommand('markgarden.openGraphView', () => graphViewManager.openGraphView(false)),
-    vscode.commands.registerCommand('markgarden.openLocalGraphView', () => graphViewManager.openGraphView(true)),
+    vscode.commands.registerCommand('markgarden.openGraphView', () => graphViewManager!.openGraphView(false)),
+    vscode.commands.registerCommand('markgarden.openLocalGraphView', () => graphViewManager!.openGraphView(true)),
 
     // Wikilink Navigation
     vscode.commands.registerCommand('markgarden.openLinkAtCursor', () => openLinkAtCursor(indexer)),
-    vscode.commands.registerCommand('markgarden.openWikilink', args => {
+    vscode.commands.registerCommand('markgarden.openWikilink', (args: any) => {
       if (typeof args === 'string') {
         try {
           args = JSON.parse(args);
@@ -199,17 +199,17 @@ async function activate(context) {
     vscode.commands.registerCommand('markgarden.addTag', () => addTagCommand(indexer)),
     vscode.commands.registerCommand('markgarden.removeTag', () => removeTagCommand(indexer)),
     vscode.commands.registerCommand('markgarden.findNotesByTag', () => findNotesByTag(indexer)),
-    vscode.commands.registerCommand('markgarden.renameTag', item => renameTagCommand(indexer, item)),
+    vscode.commands.registerCommand('markgarden.renameTag', (item: any) => renameTagCommand(indexer, item)),
 
     // Category Management
     vscode.commands.registerCommand('markgarden.addCategory', () => addCategoryCommand(indexer)),
     vscode.commands.registerCommand('markgarden.removeCategory', () => removeCategoryCommand(indexer)),
     vscode.commands.registerCommand('markgarden.findNotesByCategory', () => findNotesByCategory(indexer)),
-    vscode.commands.registerCommand('markgarden.renameCategory', item => renameCategoryCommand(indexer, item)),
+    vscode.commands.registerCommand('markgarden.renameCategory', (item: any) => renameCategoryCommand(indexer, item)),
 
     // Index & Refresh
     vscode.commands.registerCommand('markgarden.refreshIndex', async () => {
-      await indexer.rebuildIndex();
+      await indexer!.rebuildIndex();
       digitalGardenTreeDataProvider.refresh();
       vscode.window.showInformationMessage('MarkGarden: Refreshed workspace index.');
     }),
@@ -217,7 +217,7 @@ async function activate(context) {
     // Backlinks Management
     vscode.commands.registerCommand('markgarden.togglePinBacklinks', () => backlinksTreeDataProvider.togglePin()),
     vscode.commands.registerCommand('markgarden.refreshBacklinks', () => backlinksTreeDataProvider.refresh()),
-    vscode.commands.registerCommand('markgarden.convertUnlinkedMentionToWikilink', item => convertUnlinkedMentionToWikilinkCommand(item, indexer)),
+    vscode.commands.registerCommand('markgarden.convertUnlinkedMentionToWikilink', (item: any) => convertUnlinkedMentionToWikilinkCommand(item, indexer)),
 
     // Note Refactor & Zettelkasten Extraction
     vscode.commands.registerCommand('markgarden.extractSelectionToNote', () => extractSelectionToNote(indexer))
@@ -227,8 +227,8 @@ async function activate(context) {
 
   // Check Startup Option
   const config = vscode.workspace.getConfiguration('markgarden');
-  const openOnStartup = config.get('openDailyNoteOnStartup', false);
-  
+  const openOnStartup = config.get<boolean>('openDailyNoteOnStartup', false);
+
   if (openOnStartup) {
     setTimeout(() => {
       vscode.commands.executeCommand('markgarden.createDailyNote');
@@ -236,7 +236,7 @@ async function activate(context) {
   }
 }
 
-function deactivate() {
+export function deactivate(): void {
   // All disposables are tracked via context.subscriptions and disposed automatically
   // but we also nullify references for GC
   if (graphViewManager) {
@@ -249,12 +249,11 @@ function deactivate() {
   }
 }
 
-module.exports = {
-  activate,
-  deactivate,
-  extendMarkdownIt(md) {
-    return registerMarkdownItWikilinks(md);
-  },
+export function extendMarkdownIt(md: any): any {
+  return registerMarkdownItWikilinks(md);
+}
+
+export {
   formatDateTime,
   processTemplate,
   parseTemplateMetadata

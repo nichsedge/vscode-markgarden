@@ -8,8 +8,8 @@
  * Requires VS Code >= 1.101 (vscode.lm.registerMcpServerDefinitionProvider).
  * On older hosts this is a no-op.
  */
-const path = require('path');
-const vscode = require('vscode');
+import * as path from 'path';
+import * as vscode from 'vscode';
 
 const PROVIDER_ID = 'markgarden.mcpServer';
 const SERVER_LABEL = 'MarkGarden';
@@ -17,22 +17,22 @@ const SERVER_LABEL = 'MarkGarden';
 /**
  * Register the MCP server definition provider.
  * Safe to call on any VS Code version — silently skips unsupported hosts.
- * @param {vscode.ExtensionContext} context
  */
-function registerMcpSupport(context) {
-  if (!vscode.lm || typeof vscode.lm.registerMcpServerDefinitionProvider !== 'function') {
+export function registerMcpSupport(context: vscode.ExtensionContext): vscode.Disposable | null {
+  const lm = (vscode as any).lm;
+  if (!lm || typeof lm.registerMcpServerDefinitionProvider !== 'function') {
     return null;
   }
 
-  const provider = vscode.lm.registerMcpServerDefinitionProvider(PROVIDER_ID, {
+  const provider = lm.registerMcpServerDefinitionProvider(PROVIDER_ID, {
     provideMcpServerDefinitions: () => {
       const folders = vscode.workspace.workspaceFolders;
       if (!folders || folders.length === 0) {
         return [];
       }
-      const serverModule = path.join(context.extensionPath, 'src', 'mcpServer.js');
+      const serverModule = path.join(context.extensionPath, 'dist', 'mcpServer.js');
       return [
-        new vscode.McpStdioServerDefinition(
+        new (vscode as any).McpStdioServerDefinition(
           SERVER_LABEL,
           process.execPath, // the same Node binary VS Code ships with
           [serverModule],
@@ -41,11 +41,9 @@ function registerMcpSupport(context) {
         )
       ];
     },
-    resolveMcpServerDefinition: async server => server
+    resolveMcpServerDefinition: async (server: any) => server
   });
 
   context.subscriptions.push(provider);
   return provider;
 }
-
-module.exports = { registerMcpSupport };

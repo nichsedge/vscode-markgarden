@@ -1,28 +1,38 @@
-const vscode = require('vscode');
-const fs = require('fs');
-const path = require('path');
+import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
+
+export interface TemplateMetadata {
+  title: string;
+  description: string;
+  tags: string[];
+}
+
+interface TemplateQuickPickItem extends vscode.QuickPickItem {
+  filePath: string;
+}
 
 /**
  * Format date using custom token replacement.
  * Supported tokens: YYYY, MM, DD, HH, mm, ss, Z
  */
-function formatDateTime(date, formatStr) {
-  const pad = (num, len = 2) => String(num).padStart(len, '0');
-  
-  const YYYY = date.getFullYear();
+export function formatDateTime(date: Date, formatStr: string): string {
+  const pad = (num: number, len = 2) => String(num).padStart(len, '0');
+
+  const YYYY = String(date.getFullYear());
   const MM = pad(date.getMonth() + 1);
   const DD = pad(date.getDate());
   const HH = pad(date.getHours());
   const mm = pad(date.getMinutes());
   const ss = pad(date.getSeconds());
-  
+
   // Timezone offset formatting
   const tzOffset = -date.getTimezoneOffset();
   const diff = tzOffset >= 0 ? '+' : '-';
   const tzHours = pad(Math.floor(Math.abs(tzOffset) / 60));
   const tzMins = pad(Math.abs(tzOffset) % 60);
   const Z = tzOffset === 0 ? 'Z' : `${diff}${tzHours}:${tzMins}`;
-  
+
   return formatStr
     .replace(/YYYY/g, YYYY)
     .replace(/MM/g, MM)
@@ -41,36 +51,36 @@ function formatDateTime(date, formatStr) {
  * - {{time}}
  * - {{time:FORMAT}}
  */
-function processTemplate(content, filenameWithoutExtension, date = new Date()) {
+export function processTemplate(content: string, filenameWithoutExtension: string, date: Date = new Date()): string {
   let processed = content;
-  
+
   // Replace {{title}}
   processed = processed.replace(/{{title}}/g, filenameWithoutExtension);
-  
+
   // Replace {{date:FORMAT}}
-  processed = processed.replace(/{{date:([^}]+)}}/g, (match, formatStr) => {
+  processed = processed.replace(/{{date:([^}]+)}}/g, (_match, formatStr) => {
     return formatDateTime(date, formatStr);
   });
-  
+
   // Replace {{time:FORMAT}}
-  processed = processed.replace(/{{time:([^}]+)}}/g, (match, formatStr) => {
+  processed = processed.replace(/{{time:([^}]+)}}/g, (_match, formatStr) => {
     return formatDateTime(date, formatStr);
   });
-  
+
   // Replace simple {{date}}
   processed = processed.replace(/{{date}}/g, formatDateTime(date, 'YYYY-MM-DD'));
-  
+
   // Replace simple {{time}}
   processed = processed.replace(/{{time}}/g, formatDateTime(date, 'HH:mm'));
-  
+
   return processed;
 }
 
 /**
  * Simple parser to extract frontmatter metadata from template files
  */
-function parseTemplateMetadata(filePath, fileContent) {
-  const metadata = {
+export function parseTemplateMetadata(filePath: string, fileContent: string): TemplateMetadata {
+  const metadata: TemplateMetadata = {
     title: path.basename(filePath, '.md'),
     description: '',
     tags: []
@@ -85,7 +95,7 @@ function parseTemplateMetadata(filePath, fileContent) {
         const key = parts[0].trim().toLowerCase();
         let value = parts.slice(1).join(':').trim();
         value = value.replace(/^['"]|['"]$/g, '');
-        
+
         if (key === 'title') {
           metadata.title = value;
         } else if (key === 'description') {
@@ -107,12 +117,12 @@ function parseTemplateMetadata(filePath, fileContent) {
 /**
  * Get active workspace folder absolute path
  */
-function getWorkspaceFolder() {
+export function getWorkspaceFolder(): string | null {
   const folders = vscode.workspace.workspaceFolders;
   if (!folders || folders.length === 0) {
     return null;
   }
-  
+
   const activeEditor = vscode.window.activeTextEditor;
   if (activeEditor) {
     const activeUri = activeEditor.document.uri;
@@ -121,14 +131,14 @@ function getWorkspaceFolder() {
       return folder.uri.fsPath;
     }
   }
-  
+
   return folders[0].uri.fsPath;
 }
 
 /**
  * Command: Insert Template
  */
-async function insertTemplate() {
+export async function insertTemplate(): Promise<void> {
   const workspaceRoot = getWorkspaceFolder();
   if (!workspaceRoot) {
     vscode.window.showErrorMessage('MarkGarden: Please open a workspace folder first.');
@@ -142,7 +152,7 @@ async function insertTemplate() {
   }
 
   const config = vscode.workspace.getConfiguration('markgarden');
-  const templatesFolder = config.get('templatesFolder', 'templates');
+  const templatesFolder = config.get<string>('templatesFolder', 'templates');
   const templatesDir = path.resolve(workspaceRoot, templatesFolder);
 
   if (!fs.existsSync(templatesDir)) {
@@ -150,10 +160,10 @@ async function insertTemplate() {
     return;
   }
 
-  let files;
+  let files: string[];
   try {
     files = fs.readdirSync(templatesDir).filter(file => file.endsWith('.md'));
-  } catch (err) {
+  } catch (err: any) {
     vscode.window.showErrorMessage(`MarkGarden: Failed to read templates directory: ${err.message}`);
     return;
   }
@@ -163,13 +173,13 @@ async function insertTemplate() {
     return;
   }
 
-  const quickPickItems = [];
+  const quickPickItems: TemplateQuickPickItem[] = [];
   for (const file of files) {
     const fullPath = path.join(templatesDir, file);
     try {
       const content = fs.readFileSync(fullPath, 'utf8');
       const meta = parseTemplateMetadata(fullPath, content);
-      
+
       let detail = meta.description || 'Template file';
       if (meta.tags.length > 0) {
         detail += ` • Tags: ${meta.tags.join(', ')}`;
@@ -205,21 +215,13 @@ async function insertTemplate() {
     const templateRaw = fs.readFileSync(selected.filePath, 'utf8');
     const docPath = editor.document.fileName;
     const titleWithoutExt = path.basename(docPath, path.extname(docPath));
-    
+
     const processedContent = processTemplate(templateRaw, titleWithoutExt, new Date());
-    
+
     await editor.edit(editBuilder => {
       editBuilder.insert(editor.selection.active, processedContent);
     });
-  } catch (err) {
+  } catch (err: any) {
     vscode.window.showErrorMessage(`MarkGarden: Failed to insert template: ${err.message}`);
   }
 }
-
-module.exports = {
-  formatDateTime,
-  processTemplate,
-  parseTemplateMetadata,
-  getWorkspaceFolder,
-  insertTemplate
-};

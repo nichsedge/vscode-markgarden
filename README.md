@@ -211,12 +211,15 @@ Customize settings inside your `settings.json` (Workspace or User) under the `ma
    Or open Extensions view (`Ctrl+Shift+X`), click **`...`** (Views and More Actions) > **Install from VSIX...**.
 
 ### Option 2: Build from Source
-
+ 
 ```bash
 git clone https://github.com/nichsedge/vscode-markgarden.git
 cd vscode-markgarden
-npm install
-npm test
-npm run package
-code --install-extension markgarden-1.2.0.vsix
+bun install
+bun run compile
+bun test
+bun run build
+bun run package
+code --install-extension markgarden-1.7.0.vsix
 ```
+

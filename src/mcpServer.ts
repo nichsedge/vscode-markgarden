@@ -17,11 +17,11 @@
  * The workspace folder is passed by the extension host via the
  * MARKGARDEN_WORKSPACE environment variable.
  */
-const fs = require('fs');
-const path = require('path');
-const { z } = require('zod');
-const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
-const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
+import * as fs from 'fs';
+import * as path from 'path';
+import { z } from 'zod';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 const WORKSPACE = process.env.MARKGARDEN_WORKSPACE || process.cwd();
 
@@ -32,9 +32,9 @@ const WORKSPACE = process.env.MARKGARDEN_WORKSPACE || process.cwd();
 /** Default folders that are noise for a knowledge garden. */
 const IGNORED_DIRS = new Set(['node_modules', '.git', '.vscode', '.obsidian', '.trash', 'coverage', 'dist']);
 
-function* walkMarkdown(dir, depth = 0) {
+function* walkMarkdown(dir: string, depth = 0): Generator<string> {
   if (depth > 12) return;
-  let entries;
+  let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true });
   } catch {
@@ -51,11 +51,11 @@ function* walkMarkdown(dir, depth = 0) {
   }
 }
 
-function listNoteFiles() {
+function listNoteFiles(): string[] {
   return Array.from(walkMarkdown(WORKSPACE)).sort();
 }
 
-function readNote(absPath) {
+function readNote(absPath: string): string {
   try {
     return fs.readFileSync(absPath, 'utf8');
   } catch {
@@ -64,11 +64,11 @@ function readNote(absPath) {
 }
 
 /** Minimal YAML frontmatter extraction: top-level scalar keys + tags/categories lists. */
-function parseFrontmatter(content) {
-  const result = {};
+function parseFrontmatter(content: string): Record<string, any> {
+  const result: Record<string, any> = {};
   const m = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!m) return result;
-  let currentKey = null;
+  let currentKey: string | null = null;
   for (const line of m[1].split(/\r?\n/)) {
     const kv = line.match(/^([A-Za-z0-9_-]+)\s*:\s*(.*)$/);
     if (kv && !line.startsWith(' ') && !line.startsWith('-')) {
@@ -86,16 +86,16 @@ function parseFrontmatter(content) {
       }
     } else if (currentKey && line.match(/^\s+-\s+(.+)$/)) {
       if (!Array.isArray(result[currentKey])) result[currentKey] = [];
-      result[currentKey].push(line.match(/^\s+-\s+(.+)$/)[1].trim().replace(/^["']|["']$/g, ''));
+      result[currentKey].push(line.match(/^\s+-\s+(.+)$/)![1].trim().replace(/^["']|["']$/g, ''));
     }
   }
   return result;
 }
 
 /** Inline #hashtags found in the body (frontmatter stripped). */
-function extractInlineTags(content) {
+function extractInlineTags(content: string): string[] {
   const body = content.replace(/^---\r?\n[\s\S]*?\r?\n---/, '');
-  const tags = new Set();
+  const tags = new Set<string>();
   for (const m of body.matchAll(/(?:^|\s)#([\w][\w/-]*)/g)) {
     tags.add(m[1]);
   }
@@ -103,18 +103,18 @@ function extractInlineTags(content) {
 }
 
 function collectTagsCategories() {
-  const tags = new Map();
-  const cats = new Map();
+  const tags = new Map<string, string[]>();
+  const cats = new Map<string, string[]>();
   for (const file of listNoteFiles()) {
     const content = readNote(file);
     const fm = parseFrontmatter(content);
     const rel = path.relative(WORKSPACE, file);
-    const add = (map, values) => {
+    const add = (map: Map<string, string[]>, values: any[]) => {
       for (const v of values || []) {
         const key = String(v).trim();
         if (!key) continue;
         if (!map.has(key)) map.set(key, []);
-        map.get(key).push(rel);
+        map.get(key)!.push(rel);
       }
     };
     const fmTags = Array.isArray(fm.tags) ? fm.tags : (fm.tags ? String(fm.tags).split(/\s+/) : []);
@@ -122,19 +122,19 @@ function collectTagsCategories() {
     const fmCats = Array.isArray(fm.categories) ? fm.categories : (fm.categories ? [fm.categories] : []);
     add(cats, fmCats);
   }
-  const toSorted = map => Array.from(map.entries())
+  const toSorted = (map: Map<string, string[]>) => Array.from(map.entries())
     .map(([name, files]) => ({ name, count: files.length }))
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
   return { tags: toSorted(tags), categories: toSorted(cats) };
 }
 
-function notesWithTaxonomy(kind, name) {
+function notesWithTaxonomy(kind: string, name: string) {
   const target = String(name).toLowerCase();
-  const hits = [];
+  const hits: string[] = [];
   for (const file of listNoteFiles()) {
     const content = readNote(file);
     const fm = parseFrontmatter(content);
-    let values = kind === 'tag' ? [] : [];
+    let values: any[] = [];
     if (kind === 'tag') {
       const fmTags = Array.isArray(fm.tags) ? fm.tags : (fm.tags ? String(fm.tags).split(/\s+/) : []);
       values = [...fmTags, ...extractInlineTags(content)];
@@ -148,8 +148,8 @@ function notesWithTaxonomy(kind, name) {
   return hits;
 }
 
-function json(value) {
-  return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] };
+function json(value: any) {
+  return { content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] };
 }
 
 // ---------------------------------------------------------------------------
@@ -255,13 +255,13 @@ server.registerTool('get_note', {
 }, async ({ path: rel }) => {
   const abs = path.resolve(WORKSPACE, rel);
   if (!abs.startsWith(path.resolve(WORKSPACE))) {
-    return { isError: true, content: [{ type: 'text', text: 'Path escapes the workspace.' }] };
+    return { isError: true, content: [{ type: 'text' as const, text: 'Path escapes the workspace.' }] };
   }
   const content = readNote(abs);
   if (!content && !fs.existsSync(abs)) {
-    return { isError: true, content: [{ type: 'text', text: `Note not found: ${rel}` }] };
+    return { isError: true, content: [{ type: 'text' as const, text: `Note not found: ${rel}` }] };
   }
-  return { content: [{ type: 'text', text: content }] };
+  return { content: [{ type: 'text' as const, text: content }] };
 });
 
 server.registerTool('list_tags', {
@@ -298,7 +298,7 @@ server.registerTool('search_notes', {
 }, async ({ query, limit }) => {
   const max = Math.min(Number(limit) || 20, 100);
   const needle = String(query).toLowerCase();
-  const hits = [];
+  const hits: Array<{ path: string; snippet: string }> = [];
   for (const file of listNoteFiles()) {
     if (hits.length >= max) break;
     const content = readNote(file);

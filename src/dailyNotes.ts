@@ -1,12 +1,12 @@
-const vscode = require('vscode');
-const fs = require('fs');
-const path = require('path');
-const { formatDateTime, processTemplate, getWorkspaceFolder } = require('./templates');
+import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
+import { formatDateTime, processTemplate, getWorkspaceFolder } from './templates';
 
 /**
  * Command: Create Daily Note
  */
-async function createDailyNote() {
+export async function createDailyNote(): Promise<void> {
   const workspaceRoot = getWorkspaceFolder();
   if (!workspaceRoot) {
     vscode.window.showErrorMessage('MarkGarden: Please open a workspace folder first.');
@@ -15,15 +15,15 @@ async function createDailyNote() {
 
   // Get Configurations
   const config = vscode.workspace.getConfiguration('markgarden');
-  const templatesFolder = config.get('templatesFolder', 'templates');
-  const dailyNotesFolder = config.get('dailyNotesFolder', '');
-  const dailyNoteTemplate = config.get('dailyNoteTemplate', 'daily.md');
-  const dateFormat = config.get('dateFormat', 'YYYY-MM-DD');
+  const templatesFolder = config.get<string>('templatesFolder', 'templates');
+  const dailyNotesFolder = config.get<string>('dailyNotesFolder', '');
+  const dailyNoteTemplate = config.get<string>('dailyNoteTemplate', 'daily.md');
+  const dateFormat = config.get<string>('dateFormat', 'YYYY-MM-DD');
 
   const now = new Date();
   const dailyNoteName = formatDateTime(now, dateFormat);
   const dailyNoteFilename = `${dailyNoteName}.md`;
-  
+
   // Resolve paths
   const dailyNoteDir = path.resolve(workspaceRoot, dailyNotesFolder);
   const dailyNotePath = path.join(dailyNoteDir, dailyNoteFilename);
@@ -45,7 +45,7 @@ async function createDailyNote() {
   // Ensure daily note folder exists
   try {
     await fs.promises.mkdir(dailyNoteDir, { recursive: true });
-  } catch (err) {
+  } catch (err: any) {
     vscode.window.showErrorMessage(`MarkGarden: Failed to create daily notes directory: ${err.message}`);
     return;
   }
@@ -55,7 +55,7 @@ async function createDailyNote() {
   const templatesDir = path.resolve(workspaceRoot, templatesFolder);
   const templatePath = path.join(templatesDir, dailyNoteTemplate);
 
-  let templateRaw = null;
+  let templateRaw: string | null = null;
   try {
     templateRaw = await fs.promises.readFile(templatePath, 'utf8');
   } catch {
@@ -65,7 +65,7 @@ async function createDailyNote() {
   if (templateRaw !== null) {
     try {
       initialContent = processTemplate(templateRaw, dailyNoteName, now);
-    } catch (err) {
+    } catch (err: any) {
       vscode.window.showWarningMessage(`MarkGarden: Failed to load/process daily template: ${err.message}`);
       initialContent = `# ${dailyNoteName}\n`;
     }
@@ -80,11 +80,7 @@ async function createDailyNote() {
     const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(dailyNotePath));
     await vscode.window.showTextDocument(doc);
     vscode.window.showInformationMessage(`MarkGarden: Created today's daily note: ${dailyNoteFilename}`);
-  } catch (err) {
+  } catch (err: any) {
     vscode.window.showErrorMessage(`MarkGarden: Failed to write daily note: ${err.message}`);
   }
 }
-
-module.exports = {
-  createDailyNote
-};

@@ -1,23 +1,34 @@
-const vscode = require('vscode');
-const fs = require('fs');
-const path = require('path');
-const { parseWikilinkTarget, extractHeadings } = require('./indexer');
+import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
+import { parseWikilinkTarget, extractHeadings, extractBlockReferences } from './indexer';
+
+export interface WikilinkMatch {
+  range: vscode.Range;
+  target: string;
+  raw: string;
+  offset: number;
+  isEmbed: boolean;
+}
 
 /**
  * Simple LRU cache for parsed wikilink results keyed on (uri, version).
  * Avoids re-scanning the same unchanged document on every provider call.
  */
 class DocumentParseCache {
+  private _cache: Map<string, WikilinkMatch[]>;
+  private _maxSize: number;
+
   constructor(maxSize = 32) {
     this._cache = new Map();
     this._maxSize = maxSize;
   }
 
-  _key(document) {
+  private _key(document: vscode.TextDocument): string {
     return document.uri.toString() + ':' + document.version;
   }
 
-  get(document) {
+  get(document: vscode.TextDocument): WikilinkMatch[] | null {
     const key = this._key(document);
     const entry = this._cache.get(key);
     if (entry) {
@@ -29,12 +40,14 @@ class DocumentParseCache {
     return null;
   }
 
-  set(document, value) {
+  set(document: vscode.TextDocument, value: WikilinkMatch[]): void {
     const key = this._key(document);
     // Evict oldest if at capacity
     if (this._cache.size >= this._maxSize) {
       const oldest = this._cache.keys().next().value;
-      this._cache.delete(oldest);
+      if (oldest !== undefined) {
+        this._cache.delete(oldest);
+      }
     }
     this._cache.set(key, value);
   }
@@ -86,8 +99,8 @@ function getWikilinkAtPosition(document, position) {
  */
 function resolveNewNoteFolder(sourceFilePath) {
   const config = vscode.workspace.getConfiguration('markgarden');
-  const strategy = config.get('newNoteFolderStrategy', 'root');
-  const customFolder = config.get('notesFolder', '');
+  const strategy = config.get<string>('newNoteFolderStrategy', 'root');
+  const customFolder = config.get<string>('notesFolder', '');
   
   const workspaceFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(sourceFilePath)) ||
                           (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0]);
@@ -202,15 +215,17 @@ async function resolveMediaFilePath(mediaTarget, sourceFilePath, indexer = null)
  * DocumentLinkProvider to make [[wikilinks]] and ![[embeds]] clickable in markdown files.
  * Uses cached parsed wikilinks and pre-resolved link targets from the indexer.
  */
-class MarkGardenDocumentLinkProvider {
-  constructor(indexer) {
+class MarkGardenDocumentLinkProvider implements vscode.DocumentLinkProvider {
+  public indexer: any;
+
+  constructor(indexer: any) {
     this.indexer = indexer;
   }
 
-  async provideDocumentLinks(document) {
+  async provideDocumentLinks(document: vscode.TextDocument): Promise<vscode.DocumentLink[]> {
     const links = findWikilinksInDocument(document);
 
-    const docLinks = [];
+    const docLinks: vscode.DocumentLink[] = [];
     for (const item of links) {
       const parsed = parseWikilinkTarget(item.target);
 
@@ -228,7 +243,8 @@ class MarkGardenDocumentLinkProvider {
         docLink.tooltip = mediaPath
           ? `Open media file "${parsed.targetNote}" (Ctrl/Cmd+Click)`
           : `Media file "${parsed.targetNote}" (not found)`;
-        return docLink;
+        docLinks.push(docLink);
+        continue;
       }
 
       const targetPath = parsed.targetNote
@@ -251,12 +267,14 @@ class MarkGardenDocumentLinkProvider {
 /**
  * DefinitionProvider to enable F12 ("Go to Definition") on [[wikilinks]].
  */
-class MarkGardenDefinitionProvider {
-  constructor(indexer) {
+class MarkGardenDefinitionProvider implements vscode.DefinitionProvider {
+  public indexer: any;
+
+  constructor(indexer: any) {
     this.indexer = indexer;
   }
 
-  async provideDefinition(document, position) {
+  async provideDefinition(document: vscode.TextDocument, position: vscode.Position): Promise<vscode.Definition | null> {
     const link = getWikilinkAtPosition(document, position);
     if (!link) return null;
 
@@ -315,7 +333,7 @@ class MarkGardenDefinitionProvider {
     } else if (parsed.heading) {
       // Check indexed headings first before reading from disk
       if (targetMeta && targetMeta.headings) {
-        const headingMatch = targetMeta.headings.find(h => h.text.toLowerCase() === parsed.heading.toLowerCase());
+        const headingMatch = targetMeta.headings.find((h: any) => h.text.toLowerCase() === parsed.heading.toLowerCase());
         if (headingMatch) {
           targetLine = headingMatch.line;
         }
@@ -323,7 +341,7 @@ class MarkGardenDefinitionProvider {
         try {
           const content = await fs.promises.readFile(targetPath, 'utf8');
           const headings = extractHeadings(content);
-          const headingMatch = headings.find(h => h.text.toLowerCase() === parsed.heading.toLowerCase());
+          const headingMatch = headings.find((h: any) => h.text.toLowerCase() === parsed.heading.toLowerCase());
           if (headingMatch) {
             targetLine = headingMatch.line;
           }
@@ -343,12 +361,14 @@ class MarkGardenDefinitionProvider {
 /**
  * CompletionItemProvider for [[wikilinks]] note titles, #headings, and #^blocks.
  */
-class MarkGardenCompletionItemProvider {
-  constructor(indexer) {
+class MarkGardenCompletionItemProvider implements vscode.CompletionItemProvider {
+  public indexer: any;
+
+  constructor(indexer: any) {
     this.indexer = indexer;
   }
 
-  async provideCompletionItems(document, position) {
+  async provideCompletionItems(document: vscode.TextDocument, position: vscode.Position): Promise<vscode.CompletionItem[] | undefined> {
     const linePrefix = document.lineAt(position).text.substr(0, position.character);
     const lastOpenBracket = linePrefix.lastIndexOf('[[');
     if (lastOpenBracket === -1) return undefined;
@@ -357,7 +377,7 @@ class MarkGardenCompletionItemProvider {
     const textAfterBracket = linePrefix.substring(lastOpenBracket + 2);
     if (textAfterBracket.includes(']]')) return undefined;
 
-    const items = [];
+    const items: vscode.CompletionItem[] = [];
     const hashIndex = textAfterBracket.indexOf('#');
 
     if (hashIndex !== -1) {
@@ -378,7 +398,6 @@ class MarkGardenCompletionItemProvider {
         if (targetFile === document.fileName) {
           try {
             const currentDocText = document.getText();
-            const { extractBlockReferences } = require('./indexer');
             fileHeadings = extractHeadings(currentDocText);
             fileBlocks = extractBlockReferences(currentDocText);
           } catch {
@@ -398,7 +417,6 @@ class MarkGardenCompletionItemProvider {
           try {
             await fs.promises.access(targetFile);
             const content = await fs.promises.readFile(targetFile, 'utf8');
-            const { extractBlockReferences } = require('./indexer');
             fileHeadings = extractHeadings(content);
             fileBlocks = fileBlocks || extractBlockReferences(content);
           } catch {
@@ -638,7 +656,7 @@ async function openLinkAtCursor(indexer) {
   await navigateWikilink(link.target, editor.document.fileName, indexer);
 }
 
-module.exports = {
+export {
   findWikilinksInDocument,
   getWikilinkAtPosition,
   resolveNewNoteFolder,

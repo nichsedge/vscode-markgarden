@@ -1,12 +1,12 @@
-const vscode = require('vscode');
-const fs = require('fs');
-const path = require('path');
-const { resolveNewNoteFolder } = require('./wikilinks');
+import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
+import { resolveNewNoteFolder } from './wikilinks';
 
 /**
  * Derives a clean default note title from selected markdown text.
  */
-function deriveDefaultTitle(selectionText) {
+export function deriveDefaultTitle(selectionText: string): string {
   if (!selectionText) return 'Untitled Note';
 
   const lines = selectionText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
@@ -38,7 +38,12 @@ function deriveDefaultTitle(selectionText) {
 /**
  * Generates frontmatter and body for the extracted note.
  */
-function generateRefactoredNoteContent(title, selectionText, sourceNoteName, dateStr = new Date().toISOString()) {
+export function generateRefactoredNoteContent(
+  title: string,
+  selectionText: string,
+  sourceNoteName?: string,
+  dateStr: string = new Date().toISOString()
+): string {
   const sourceLink = sourceNoteName ? `\nsource: "[[${sourceNoteName}]]"` : '';
   const frontmatter = `---\ntitle: "${title}"\ndate: ${dateStr}${sourceLink}\n---\n\n`;
 
@@ -52,10 +57,14 @@ function generateRefactoredNoteContent(title, selectionText, sourceNoteName, dat
   return frontmatter + `# ${title}\n\n` + trimmedSelection + '\n';
 }
 
+interface RefactorModeQuickPickItem extends vscode.QuickPickItem {
+  mode: 'link' | 'embed' | 'alias' | 'none';
+}
+
 /**
  * Command: Extract Selection to New Note (Zettelkasten Refactor)
  */
-async function extractSelectionToNote(indexer) {
+export async function extractSelectionToNote(indexer: any): Promise<void> {
   const editor = vscode.window.activeTextEditor;
   if (!editor || editor.document.languageId !== 'markdown') {
     vscode.window.showWarningMessage('MarkGarden: Please open a Markdown note to extract text.');
@@ -85,7 +94,7 @@ async function extractSelectionToNote(indexer) {
   if (!title) return;
 
   // 2. Prompt for replacement mode
-  const modeItems = [
+  const modeItems: RefactorModeQuickPickItem[] = [
     {
       label: `[[${title}]]`,
       description: 'Replace selection with a wikilink',
@@ -135,7 +144,7 @@ async function extractSelectionToNote(indexer) {
 
   try {
     await fs.promises.mkdir(targetFolder, { recursive: true });
-  } catch (err) {
+  } catch (err: any) {
     vscode.window.showErrorMessage(`MarkGarden: Failed to create folder: ${err.message}`);
     return;
   }
@@ -165,7 +174,7 @@ async function extractSelectionToNote(indexer) {
     if (indexer) {
       indexer.handleFileChange(targetPath);
     }
-  } catch (err) {
+  } catch (err: any) {
     vscode.window.showErrorMessage(`MarkGarden: Failed to write file: ${err.message}`);
     return;
   }
@@ -187,9 +196,3 @@ async function extractSelectionToNote(indexer) {
     await vscode.window.showTextDocument(doc);
   }
 }
-
-module.exports = {
-  extractSelectionToNote,
-  deriveDefaultTitle,
-  generateRefactoredNoteContent
-};

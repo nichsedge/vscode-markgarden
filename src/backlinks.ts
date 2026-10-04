@@ -1,8 +1,11 @@
-const vscode = require('vscode');
-const path = require('path');
+import * as vscode from 'vscode';
+import * as path from 'path';
 
-class BacklinkTreeItem extends vscode.TreeItem {
-  constructor(label, collapsibleState, type, itemData = null) {
+export class BacklinkTreeItem extends vscode.TreeItem {
+  public type: string;
+  public itemData: any;
+
+  constructor(label: string, collapsibleState: vscode.TreeItemCollapsibleState, type: string, itemData: any = null) {
     super(label, collapsibleState);
     this.type = type; // 'section', 'linkedFile', 'unlinkedFile', 'linkedSnippet', 'unlinkedSnippet', 'info'
     this.itemData = itemData;
@@ -54,10 +57,17 @@ class BacklinkTreeItem extends vscode.TreeItem {
   }
 }
 
-class BacklinksTreeDataProvider {
-  constructor(indexer) {
+export class BacklinksTreeDataProvider implements vscode.TreeDataProvider<BacklinkTreeItem> {
+  public indexer: any;
+  private _onDidChangeTreeData: vscode.EventEmitter<BacklinkTreeItem | undefined | null | void>;
+  public onDidChangeTreeData: vscode.Event<BacklinkTreeItem | undefined | null | void>;
+  public pinnedFilePath: string | null;
+  public activeFilePath: string | null;
+  private _disposables: vscode.Disposable[];
+
+  constructor(indexer: any) {
     this.indexer = indexer;
-    this._onDidChangeTreeData = new vscode.EventEmitter();
+    this._onDidChangeTreeData = new vscode.EventEmitter<BacklinkTreeItem | undefined | null | void>();
     this.onDidChangeTreeData = this._onDidChangeTreeData.event;
 
     this.pinnedFilePath = null;
@@ -86,11 +96,11 @@ class BacklinksTreeDataProvider {
     this._disposables.push(editorDisposable, indexDisposable, this._onDidChangeTreeData);
   }
 
-  get targetFilePath() {
+  get targetFilePath(): string | null {
     return this.pinnedFilePath || this.activeFilePath;
   }
 
-  togglePin() {
+  togglePin(): void {
     if (this.pinnedFilePath) {
       this.pinnedFilePath = null;
       if (vscode.window.activeTextEditor && vscode.window.activeTextEditor.document.languageId === 'markdown') {
@@ -108,15 +118,15 @@ class BacklinksTreeDataProvider {
     this.refresh();
   }
 
-  refresh() {
+  refresh(): void {
     this._onDidChangeTreeData.fire();
   }
 
-  getTreeItem(element) {
+  getTreeItem(element: BacklinkTreeItem): vscode.TreeItem {
     return element;
   }
 
-  async getChildren(element) {
+  async getChildren(element?: BacklinkTreeItem): Promise<BacklinkTreeItem[]> {
     const targetFile = this.targetFilePath;
 
     if (!targetFile || !this.indexer.fileIndex.has(targetFile)) {
@@ -136,8 +146,8 @@ class BacklinksTreeDataProvider {
       const backlinks = await this.indexer.getBacklinksForFile(targetFile);
       const unlinked = await this.indexer.getUnlinkedMentionsForFile(targetFile);
 
-      const totalLinkedSnippets = backlinks.reduce((sum, b) => sum + b.snippets.length, 0);
-      const totalUnlinkedMentions = unlinked.reduce((sum, u) => sum + u.mentions.length, 0);
+      const totalLinkedSnippets = backlinks.reduce((sum: number, b: any) => sum + b.snippets.length, 0);
+      const totalUnlinkedMentions = unlinked.reduce((sum: number, u: any) => sum + u.mentions.length, 0);
 
       const pinSuffix = this.pinnedFilePath ? ' 📌 [Pinned]' : '';
 
@@ -170,7 +180,7 @@ class BacklinksTreeDataProvider {
           item.iconPath = new vscode.ThemeIcon('dash');
           return [item];
         }
-        return backlinks.map(b => {
+        return backlinks.map((b: any) => {
           const fileItem = new BacklinkTreeItem(
             b.title,
             vscode.TreeItemCollapsibleState.Expanded,
@@ -187,7 +197,7 @@ class BacklinksTreeDataProvider {
           item.iconPath = new vscode.ThemeIcon('dash');
           return [item];
         }
-        return unlinked.map(u => {
+        return unlinked.map((u: any) => {
           const fileItem = new BacklinkTreeItem(
             u.title,
             vscode.TreeItemCollapsibleState.Expanded,
@@ -203,7 +213,7 @@ class BacklinksTreeDataProvider {
     // Linked file level -> snippets
     if (element.type === 'linkedFile') {
       const fileData = element.itemData;
-      return fileData.snippets.map(s => {
+      return fileData.snippets.map((s: any) => {
         const snippetItem = new BacklinkTreeItem(
           `L${s.line + 1}: ${s.lineText}`,
           vscode.TreeItemCollapsibleState.None,
@@ -221,7 +231,7 @@ class BacklinksTreeDataProvider {
     // Unlinked file level -> mentions
     if (element.type === 'unlinkedFile') {
       const fileData = element.itemData;
-      return fileData.mentions.map(m => {
+      return fileData.mentions.map((m: any) => {
         const snippetItem = new BacklinkTreeItem(
           `L${m.line + 1}: ${m.lineText}`,
           vscode.TreeItemCollapsibleState.None,
@@ -242,7 +252,7 @@ class BacklinksTreeDataProvider {
     return [];
   }
 
-  dispose() {
+  dispose(): void {
     for (const d of this._disposables) {
       d.dispose();
     }
@@ -250,7 +260,7 @@ class BacklinksTreeDataProvider {
   }
 }
 
-async function convertUnlinkedMentionToWikilinkCommand(item, indexer) {
+export async function convertUnlinkedMentionToWikilinkCommand(item: any, indexer: any): Promise<void> {
   if (!item || !item.itemData) return;
   const { filePath, line, term, targetNote } = item.itemData;
 
@@ -261,7 +271,7 @@ async function convertUnlinkedMentionToWikilinkCommand(item, indexer) {
     let targetLine = line;
     const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const regex = new RegExp(`\\b${escaped}\\b`, 'i');
-    let match = null;
+    let match: RegExpExecArray | null = null;
 
     if (targetLine >= 0 && targetLine < doc.lineCount) {
       match = regex.exec(doc.lineAt(targetLine).text);
@@ -286,7 +296,7 @@ async function convertUnlinkedMentionToWikilinkCommand(item, indexer) {
     const startPos = new vscode.Position(targetLine, match.index);
     const endPos = new vscode.Position(targetLine, match.index + match[0].length);
 
-    let replacement;
+    let replacement: string;
     if (term.toLowerCase() === targetNote.toLowerCase()) {
       replacement = `[[${match[0]}]]`;
     } else {
@@ -304,12 +314,7 @@ async function convertUnlinkedMentionToWikilinkCommand(item, indexer) {
       }
       vscode.window.showInformationMessage(`Converted mention "${match[0]}" to ${replacement} in ${path.basename(filePath)}.`);
     }
-  } catch (err) {
+  } catch (err: any) {
     vscode.window.showErrorMessage(`Failed to convert wikilink: ${err.message}`);
   }
 }
-
-module.exports = {
-  BacklinksTreeDataProvider,
-  convertUnlinkedMentionToWikilinkCommand
-};

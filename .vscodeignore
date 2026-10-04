@@ -6,7 +6,13 @@ node_modules/**
 tsconfig.json
 jsconfig.json
 test/**
+src/**
+*.ts
+*.map
 vsc-extension-quickstart.md
 .agents/**
 .github/**
 AGENTS.md
+coverage/**
+bunfig.toml
+*.vsix

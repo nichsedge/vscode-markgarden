@@ -1,5 +1,5 @@
-const vscode = require('vscode');
-const path = require('path');
+import * as vscode from 'vscode';
+import * as path from 'path';
 
 // --- Frontmatter Mutation Utilities ---
 
@@ -232,32 +232,37 @@ function renameCategoryInMarkdown(content, oldCategory, newCategory) {
 /**
  * TreeDataProvider for Tags sidebar view.
  */
-class TagsTreeDataProvider {
-  constructor(indexer) {
+class TagsTreeDataProvider implements vscode.TreeDataProvider<any> {
+  public indexer: any;
+  private _onDidChangeTreeData: vscode.EventEmitter<any>;
+  public onDidChangeTreeData: vscode.Event<any>;
+  private _indexSubscription: vscode.Disposable;
+
+  constructor(indexer: any) {
     this.indexer = indexer;
-    this._onDidChangeTreeData = new vscode.EventEmitter();
+    this._onDidChangeTreeData = new vscode.EventEmitter<any>();
     this.onDidChangeTreeData = this._onDidChangeTreeData.event;
 
     this._indexSubscription = this.indexer.onDidChangeIndex(() => this.refresh());
   }
 
-  refresh() {
-    this._onDidChangeTreeData.fire();
+  refresh(): void {
+    this._onDidChangeTreeData.fire(undefined);
   }
 
-  dispose() {
+  dispose(): void {
     this._indexSubscription.dispose();
     this._onDidChangeTreeData.dispose();
   }
 
-  getTreeItem(element) {
+  getTreeItem(element: any): vscode.TreeItem {
     if (element.type === 'tag') {
       const item = new vscode.TreeItem(element.name, vscode.TreeItemCollapsibleState.Collapsed);
       item.iconPath = new vscode.ThemeIcon('tag');
       item.description = `(${element.count})`;
       item.contextValue = 'markgardenTag';
       return item;
-    } else if (element.type === 'note') {
+    } else {
       const item = new vscode.TreeItem(element.name, vscode.TreeItemCollapsibleState.None);
       item.iconPath = new vscode.ThemeIcon('markdown');
       item.description = element.relativePath;
@@ -271,10 +276,10 @@ class TagsTreeDataProvider {
     }
   }
 
-  getChildren(element) {
+  getChildren(element?: any): any[] {
     if (!element) {
       const tags = this.indexer.getAllTags();
-      return tags.map(t => ({
+      return tags.map((t: any) => ({
         type: 'tag',
         name: t.tag,
         count: t.count,
@@ -283,7 +288,7 @@ class TagsTreeDataProvider {
     }
 
     if (element.type === 'tag') {
-      return element.files.map(filePath => {
+      return element.files.map((filePath: string) => {
         const meta = this.indexer.fileIndex.get(filePath);
         return {
           type: 'note',
@@ -291,7 +296,7 @@ class TagsTreeDataProvider {
           relativePath: meta ? meta.relativePath : path.basename(filePath),
           filePath
         };
-      }).sort((a, b) => a.name.localeCompare(b.name));
+      }).sort((a: any, b: any) => a.name.localeCompare(b.name));
     }
 
     return [];
@@ -301,32 +306,37 @@ class TagsTreeDataProvider {
 /**
  * TreeDataProvider for Categories sidebar view.
  */
-class CategoriesTreeDataProvider {
-  constructor(indexer) {
+class CategoriesTreeDataProvider implements vscode.TreeDataProvider<any> {
+  public indexer: any;
+  private _onDidChangeTreeData: vscode.EventEmitter<any>;
+  public onDidChangeTreeData: vscode.Event<any>;
+  private _indexSubscription: vscode.Disposable;
+
+  constructor(indexer: any) {
     this.indexer = indexer;
-    this._onDidChangeTreeData = new vscode.EventEmitter();
+    this._onDidChangeTreeData = new vscode.EventEmitter<any>();
     this.onDidChangeTreeData = this._onDidChangeTreeData.event;
 
     this._indexSubscription = this.indexer.onDidChangeIndex(() => this.refresh());
   }
 
-  refresh() {
-    this._onDidChangeTreeData.fire();
+  refresh(): void {
+    this._onDidChangeTreeData.fire(undefined);
   }
 
-  dispose() {
+  dispose(): void {
     this._indexSubscription.dispose();
     this._onDidChangeTreeData.dispose();
   }
 
-  getTreeItem(element) {
+  getTreeItem(element: any): vscode.TreeItem {
     if (element.type === 'category') {
       const item = new vscode.TreeItem(element.name, vscode.TreeItemCollapsibleState.Collapsed);
       item.iconPath = new vscode.ThemeIcon('folder');
       item.description = `(${element.count})`;
       item.contextValue = 'markgardenCategory';
       return item;
-    } else if (element.type === 'note') {
+    } else {
       const item = new vscode.TreeItem(element.name, vscode.TreeItemCollapsibleState.None);
       item.iconPath = new vscode.ThemeIcon('markdown');
       item.description = element.relativePath;
@@ -340,10 +350,10 @@ class CategoriesTreeDataProvider {
     }
   }
 
-  getChildren(element) {
+  getChildren(element?: any): any[] {
     if (!element) {
       const categories = this.indexer.getAllCategories();
-      return categories.map(c => ({
+      return categories.map((c: any) => ({
         type: 'category',
         name: c.category,
         count: c.count,
@@ -352,7 +362,7 @@ class CategoriesTreeDataProvider {
     }
 
     if (element.type === 'category') {
-      return element.files.map(filePath => {
+      return element.files.map((filePath: string) => {
         const meta = this.indexer.fileIndex.get(filePath);
         return {
           type: 'note',
@@ -360,20 +370,20 @@ class CategoriesTreeDataProvider {
           relativePath: meta ? meta.relativePath : path.basename(filePath),
           filePath
         };
-      }).sort((a, b) => a.name.localeCompare(b.name));
+      }).sort((a: any, b: any) => a.name.localeCompare(b.name));
     }
 
     return [];
   }
 }
 
-// --- Autocompletion Provider for #hashtags ---
-
 /**
  * Suggests workspace #tags when typing # in markdown notes.
  */
-class MarkGardenHashtagCompletionItemProvider {
-  constructor(indexer) {
+class MarkGardenHashtagCompletionItemProvider implements vscode.CompletionItemProvider {
+  public indexer: any;
+
+  constructor(indexer: any) {
     this.indexer = indexer;
   }
 
@@ -427,7 +437,7 @@ async function addTagCommand(indexer) {
   const tag = tagInput.trim().replace(/^#/, '');
 
   const config = vscode.workspace.getConfiguration('markgarden');
-  const tagPrefix = config.get('tagPrefix', 'frontmatter');
+  const tagPrefix = config.get<string>('tagPrefix', 'frontmatter');
   const isInline = tagPrefix === 'inline';
 
   const currentContent = editor.document.getText();
@@ -448,7 +458,7 @@ async function addTagCommand(indexer) {
 /**
  * Command: Remove Tag from Current Note
  */
-async function removeTagCommand(indexer) {
+async function removeTagCommand(indexer: any) {
   const editor = vscode.window.activeTextEditor;
   if (!editor || editor.document.languageId !== 'markdown') {
     vscode.window.showErrorMessage('MarkGarden: Please open a markdown file first.');
@@ -456,7 +466,7 @@ async function removeTagCommand(indexer) {
   }
 
   const meta = indexer.fileIndex.get(editor.document.fileName);
-  const tags = meta ? Array.from(meta.tags) : [];
+  const tags: string[] = meta ? Array.from(meta.tags) : [];
 
   if (tags.length === 0) {
     vscode.window.showInformationMessage('MarkGarden: No tags found in the current note.');
@@ -530,7 +540,7 @@ async function removeCategoryCommand(indexer) {
   }
 
   const meta = indexer.fileIndex.get(editor.document.fileName);
-  const categories = meta ? Array.from(meta.categories) : [];
+  const categories: string[] = meta ? Array.from(meta.categories) : [];
 
   if (categories.length === 0) {
     vscode.window.showInformationMessage('MarkGarden: No categories found in the current note.');
@@ -561,26 +571,26 @@ async function removeCategoryCommand(indexer) {
 /**
  * Command: Find Notes by Tag
  */
-async function findNotesByTag(indexer) {
+async function findNotesByTag(indexer: any) {
   const tags = indexer.getAllTags();
   if (tags.length === 0) {
     vscode.window.showInformationMessage('MarkGarden: No tags indexed in workspace.');
     return;
   }
 
-  const tagPickItems = tags.map(t => ({
+  const tagPickItems: any[] = tags.map((t: any) => ({
     label: `$(tag) #${t.tag}`,
     description: `${t.count} ${t.count === 1 ? 'note' : 'notes'}`,
     tag: t
   }));
 
-  const selectedTag = await vscode.window.showQuickPick(tagPickItems, {
+  const selectedTag: any = await vscode.window.showQuickPick(tagPickItems, {
     placeHolder: 'Select a tag to view matching notes...'
   });
 
   if (!selectedTag) return;
 
-  const noteItems = selectedTag.tag.files.map(filePath => {
+  const noteItems: any[] = selectedTag.tag.files.map((filePath: string) => {
     const meta = indexer.fileIndex.get(filePath);
     return {
       label: `$(file) ${meta ? meta.title : path.basename(filePath, '.md')}`,
@@ -589,7 +599,7 @@ async function findNotesByTag(indexer) {
     };
   });
 
-  const selectedNote = await vscode.window.showQuickPick(noteItems, {
+  const selectedNote: any = await vscode.window.showQuickPick(noteItems, {
     placeHolder: `Notes tagged with #${selectedTag.tag.tag}...`
   });
 
@@ -602,26 +612,26 @@ async function findNotesByTag(indexer) {
 /**
  * Command: Find Notes by Category
  */
-async function findNotesByCategory(indexer) {
+async function findNotesByCategory(indexer: any) {
   const categories = indexer.getAllCategories();
   if (categories.length === 0) {
     vscode.window.showInformationMessage('MarkGarden: No categories indexed in workspace.');
     return;
   }
 
-  const catPickItems = categories.map(c => ({
+  const catPickItems: any[] = categories.map((c: any) => ({
     label: `$(folder) ${c.category}`,
     description: `${c.count} ${c.count === 1 ? 'note' : 'notes'}`,
     category: c
   }));
 
-  const selectedCat = await vscode.window.showQuickPick(catPickItems, {
+  const selectedCat: any = await vscode.window.showQuickPick(catPickItems, {
     placeHolder: 'Select a category to view matching notes...'
   });
 
   if (!selectedCat) return;
 
-  const noteItems = selectedCat.category.files.map(filePath => {
+  const noteItems: any[] = selectedCat.category.files.map((filePath: string) => {
     const meta = indexer.fileIndex.get(filePath);
     return {
       label: `$(file) ${meta ? meta.title : path.basename(filePath, '.md')}`,
@@ -630,7 +640,7 @@ async function findNotesByCategory(indexer) {
     };
   });
 
-  const selectedNote = await vscode.window.showQuickPick(noteItems, {
+  const selectedNote: any = await vscode.window.showQuickPick(noteItems, {
     placeHolder: `Notes categorized as "${selectedCat.category.category}"...`
   });
 
@@ -653,7 +663,7 @@ async function renameTagCommand(indexer, treeItem) {
       return;
     }
 
-    const selected = await vscode.window.showQuickPick(tags.map(t => ({
+    const selected = await vscode.window.showQuickPick<{ label: string; description: string; tag: string }>(tags.map(t => ({
       label: `#${t.tag}`,
       description: `(${t.count} notes)`,
       tag: t.tag
@@ -724,7 +734,7 @@ async function renameCategoryCommand(indexer, treeItem) {
       return;
     }
 
-    const selected = await vscode.window.showQuickPick(categories.map(c => ({
+    const selected = await vscode.window.showQuickPick<{ label: string; description: string; category: string }>(categories.map(c => ({
       label: `${c.category}`,
       description: `(${c.count} notes)`,
       category: c.category
@@ -782,7 +792,7 @@ async function renameCategoryCommand(indexer, treeItem) {
   }
 }
 
-module.exports = {
+export {
   TagsTreeDataProvider,
   CategoriesTreeDataProvider,
   MarkGardenHashtagCompletionItemProvider,

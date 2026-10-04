@@ -1,9 +1,24 @@
-const vscode = require('vscode');
+import * as vscode from 'vscode';
+
+export interface CalloutMetadata {
+  label: string;
+  icon: string;
+  color: string;
+  vsCodeIcon: string;
+}
+
+export interface ParsedCalloutHeader {
+  isCallout: boolean;
+  type: string;
+  fold: string | null;
+  title: string;
+  meta: CalloutMetadata;
+}
 
 /**
  * Standard Obsidian Callout Types and metadata (icon, color, display label).
  */
-const OBSIDIAN_CALLOUT_TYPES = {
+export const OBSIDIAN_CALLOUT_TYPES: Record<string, CalloutMetadata> = {
   note: { label: 'Note', icon: '📝', color: '#0284c7', vsCodeIcon: 'note' },
   abstract: { label: 'Abstract', icon: '📋', color: '#00b4d8', vsCodeIcon: 'book' },
   summary: { label: 'Summary', icon: '📋', color: '#00b4d8', vsCodeIcon: 'book' },
@@ -37,14 +52,12 @@ const OBSIDIAN_CALLOUT_TYPES = {
  * Regex for matching Obsidian callout header line.
  * Matches: `> [!type]+ Custom Title` or `> [!type]-` or `> [!type]`
  */
-const CALLOUT_HEADER_REGEX = /^>\s*\[!([a-zA-Z_-]+)\]([+-])?(?:\s+(.*))?$/;
+export const CALLOUT_HEADER_REGEX = /^>\s*\[!([a-zA-Z_-]+)\]([+-])?(?:\s+(.*))?$/;
 
 /**
  * Parses a line to check if it's an Obsidian callout header.
- * @param {string} line 
- * @returns {{ isCallout: boolean, type: string, fold: string|null, title: string, meta: object } | null}
  */
-function parseCalloutHeader(line) {
+export function parseCalloutHeader(line: string): ParsedCalloutHeader | null {
   if (!line || typeof line !== 'string') return null;
   const match = line.trim().match(CALLOUT_HEADER_REGEX);
   if (!match) return null;
@@ -69,13 +82,8 @@ function parseCalloutHeader(line) {
 
 /**
  * Wraps text into an Obsidian callout block.
- * @param {string} content - Selected text or empty
- * @param {string} type - Callout type (e.g. 'note', 'tip')
- * @param {string} title - Optional custom title
- * @param {string|null} fold - '+' or '-' or null
- * @returns {string} Formatted callout markdown
  */
-function formatCalloutBlock(content, type = 'note', title = '', fold = null) {
+export function formatCalloutBlock(content: string, type: string = 'note', title: string = '', fold: string | null = null): string {
   const foldMarker = fold ? fold : '';
   const titlePart = title ? ` ${title}` : '';
   const headerLine = `> [!${type}]${foldMarker}${titlePart}`;
@@ -89,10 +97,14 @@ function formatCalloutBlock(content, type = 'note', title = '', fold = null) {
   return `${headerLine}\n${bodyLines.join('\n')}\n`;
 }
 
+interface CalloutQuickPickItem extends vscode.QuickPickItem {
+  calloutType: string;
+}
+
 /**
  * Command to insert an Obsidian Callout at the cursor or around current selection.
  */
-async function insertCalloutCommand() {
+export async function insertCalloutCommand(): Promise<void> {
   const editor = vscode.window.activeTextEditor;
   if (!editor || editor.document.languageId !== 'markdown') {
     vscode.window.showWarningMessage('MarkGarden: Please open a Markdown file to insert a callout.');
@@ -100,7 +112,7 @@ async function insertCalloutCommand() {
   }
 
   // Build QuickPick items from supported types
-  const pickItems = Object.entries(OBSIDIAN_CALLOUT_TYPES).map(([typeKey, info]) => ({
+  const pickItems: CalloutQuickPickItem[] = Object.entries(OBSIDIAN_CALLOUT_TYPES).map(([typeKey, info]) => ({
     label: `${info.icon} [!${typeKey}]`,
     description: info.label,
     calloutType: typeKey
@@ -160,13 +172,11 @@ async function insertCalloutCommand() {
  * Editor Decorator for Obsidian Callouts.
  * Adds visual accent line and icon decoration to callout headers in the active editor.
  */
-class CalloutEditorDecorator {
-  constructor() {
-    this.decorationTypes = new Map();
-    this.timeout = null;
-  }
+export class CalloutEditorDecorator {
+  private decorationTypes: Map<string, vscode.TextEditorDecorationType> = new Map();
+  private timeout: ReturnType<typeof setTimeout> | null = null;
 
-  getDecorationTypeForColor(color) {
+  getDecorationTypeForColor(color: string): vscode.TextEditorDecorationType {
     if (!this.decorationTypes.has(color)) {
       const decType = vscode.window.createTextEditorDecorationType({
         isWholeLine: true,
@@ -185,20 +195,20 @@ class CalloutEditorDecorator {
       });
       this.decorationTypes.set(color, decType);
     }
-    return this.decorationTypes.get(color);
+    return this.decorationTypes.get(color)!;
   }
 
-  updateDecorations(editor) {
+  updateDecorations(editor?: vscode.TextEditor): void {
     if (!editor || !editor.document || editor.document.languageId !== 'markdown') return;
 
     const config = vscode.workspace.getConfiguration('markgarden');
-    const enabled = config.get('callouts.enableDecorations', true);
+    const enabled = config.get<boolean>('callouts.enableDecorations', true);
     if (!enabled) {
       this.clear(editor);
       return;
     }
 
-    const colorRangesMap = new Map();
+    const colorRangesMap = new Map<string, vscode.Range[]>();
     const doc = editor.document;
     const lineCount = doc.lineCount;
 
@@ -210,7 +220,7 @@ class CalloutEditorDecorator {
         if (!colorRangesMap.has(color)) {
           colorRangesMap.set(color, []);
         }
-        colorRangesMap.get(color).push(line.range);
+        colorRangesMap.get(color)!.push(line.range);
       }
     }
 
@@ -226,7 +236,7 @@ class CalloutEditorDecorator {
     }
   }
 
-  triggerUpdate(editor, delay = 100) {
+  triggerUpdate(editor?: vscode.TextEditor, delay: number = 100): void {
     if (this.timeout) {
       clearTimeout(this.timeout);
     }
@@ -235,14 +245,14 @@ class CalloutEditorDecorator {
     }, delay);
   }
 
-  clear(editor) {
+  clear(editor?: vscode.TextEditor): void {
     if (!editor) return;
     for (const decType of this.decorationTypes.values()) {
       editor.setDecorations(decType, []);
     }
   }
 
-  dispose() {
+  dispose(): void {
     if (this.timeout) {
       clearTimeout(this.timeout);
     }
@@ -255,83 +265,82 @@ class CalloutEditorDecorator {
 
 /**
  * Markdown-it plugin function for rendering Obsidian Callouts into styled HTML.
- * @param {object} md - markdown-it instance
  */
-function markdownItCalloutsPlugin(md) {
+export function markdownItCalloutsPlugin(md: any): void {
   if (!md) return;
 
   const hasRenderer = md.renderer && md.renderer.rules;
   const originalBlockquoteRender = hasRenderer && md.renderer.rules.blockquote_open
     ? md.renderer.rules.blockquote_open
-    : function(tokens, idx, options, env, self) {
+    : function(tokens: any[], idx: number, options: any, _env: any, self: any) {
         return self && self.renderToken ? self.renderToken(tokens, idx, options) : '';
       };
 
   // Enhance blockquote rendering for Obsidian callouts
   if (md.core && md.core.ruler) {
-    md.core.ruler.after('block', 'obsidian_callouts', function(state) {
-    const tokens = state.tokens;
+    md.core.ruler.after('block', 'obsidian_callouts', function(state: any) {
+      const tokens = state.tokens;
 
-    for (let i = 0; i < tokens.length; i++) {
-      if (tokens[i].type === 'blockquote_open') {
-        // Look inside the blockquote for the first inline token
-        let calloutHeader = null;
-        let inlineTokenIdx = -1;
+      for (let i = 0; i < tokens.length; i++) {
+        if (tokens[i].type === 'blockquote_open') {
+          // Look inside the blockquote for the first inline token
+          let calloutHeader: ParsedCalloutHeader | null = null;
+          let inlineTokenIdx = -1;
 
-        for (let j = i + 1; j < tokens.length; j++) {
-          if (tokens[j].type === 'blockquote_close') break;
-          if (tokens[j].type === 'inline' && tokens[j].content) {
-            const firstLine = tokens[j].content.split(/\r?\n/)[0];
-            const parsed = parseCalloutHeader(`> ${firstLine}`);
-            if (parsed) {
-              calloutHeader = parsed;
-              inlineTokenIdx = j;
+          for (let j = i + 1; j < tokens.length; j++) {
+            if (tokens[j].type === 'blockquote_close') break;
+            if (tokens[j].type === 'inline' && tokens[j].content) {
+              const firstLine = tokens[j].content.split(/\r?\n/)[0];
+              const parsed = parseCalloutHeader(`> ${firstLine}`);
+              if (parsed) {
+                calloutHeader = parsed;
+                inlineTokenIdx = j;
+              }
+              break;
             }
-            break;
           }
-        }
 
-        if (calloutHeader && inlineTokenIdx !== -1) {
-          const type = calloutHeader.type;
-          const meta = calloutHeader.meta;
-          const displayTitle = calloutHeader.title || meta.label;
-          const fold = calloutHeader.fold;
+          if (calloutHeader && inlineTokenIdx !== -1) {
+            const type = calloutHeader.type;
+            const meta = calloutHeader.meta;
+            const displayTitle = calloutHeader.title || meta.label;
+            const fold = calloutHeader.fold;
 
-          // Strip header text from first inline token
-          const inlineTok = tokens[inlineTokenIdx];
-          const lines = inlineTok.content.split(/\r?\n/);
-          lines.shift(); // remove `[!type] title` line
-          inlineTok.content = lines.join('\n');
+            // Strip header text from first inline token
+            const inlineTok = tokens[inlineTokenIdx];
+            const lines = inlineTok.content.split(/\r?\n/);
+            lines.shift(); // remove `[!type] title` line
+            inlineTok.content = lines.join('\n');
 
-          // If child text tokens exist, clean up first child
-          if (inlineTok.children && inlineTok.children.length > 0) {
-            const matchHeaderRegex = /^\[!([a-zA-Z_-]+)\]([+-])?(?:\s+(.*))?$/;
-            for (let c = 0; c < inlineTok.children.length; c++) {
-              if (inlineTok.children[c].type === 'text') {
-                if (matchHeaderRegex.test(inlineTok.children[c].content.trim())) {
-                  inlineTok.children[c].content = '';
-                  break;
+            // If child text tokens exist, clean up first child
+            if (inlineTok.children && inlineTok.children.length > 0) {
+              const matchHeaderRegex = /^\[!([a-zA-Z_-]+)\]([+-])?(?:\s+(.*))?$/;
+              for (let c = 0; c < inlineTok.children.length; c++) {
+                if (inlineTok.children[c].type === 'text') {
+                  if (matchHeaderRegex.test(inlineTok.children[c].content.trim())) {
+                    inlineTok.children[c].content = '';
+                    break;
+                  }
                 }
               }
             }
-          }
 
-          // Mark the blockquote token with callout metadata
-          tokens[i].callout = {
-            type,
-            meta,
-            displayTitle,
-            fold
-          };
+            // Mark the blockquote token with callout metadata
+            tokens[i].callout = {
+              type,
+              meta,
+              displayTitle,
+              fold
+            };
+          }
         }
       }
-    }
-  });
+    });
   }
 
   if (hasRenderer) {
     // Override blockquote open/close renderers
-    md.renderer.rules.blockquote_open = function(tokens, idx, options, env, self) {
+    md.renderer.rules.blockquote_open = function(tokens: any[], idx: number, options: any, env: any, self: any) {
       const token = tokens[idx];
       if (token.callout) {
         const { type, meta, displayTitle, fold } = token.callout;
@@ -349,11 +358,11 @@ function markdownItCalloutsPlugin(md) {
       return originalBlockquoteRender(tokens, idx, options, env, self);
     };
 
-    const originalBlockquoteClose = md.renderer.rules.blockquote_close || function(tokens, idx, options, env, self) {
+    const originalBlockquoteClose = md.renderer.rules.blockquote_close || function(tokens: any[], idx: number, options: any, _env: any, self: any) {
       return self && self.renderToken ? self.renderToken(tokens, idx, options) : '';
     };
 
-    md.renderer.rules.blockquote_close = function(tokens, idx, options, env, self) {
+    md.renderer.rules.blockquote_close = function(tokens: any[], idx: number, options: any, env: any, self: any) {
       // Find matching open token
       let count = 0;
       for (let j = idx - 1; j >= 0; j--) {
@@ -375,13 +384,3 @@ function markdownItCalloutsPlugin(md) {
     };
   }
 }
-
-module.exports = {
-  OBSIDIAN_CALLOUT_TYPES,
-  CALLOUT_HEADER_REGEX,
-  parseCalloutHeader,
-  formatCalloutBlock,
-  insertCalloutCommand,
-  CalloutEditorDecorator,
-  markdownItCalloutsPlugin
-};

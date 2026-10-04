@@ -1,7 +1,7 @@
-const vscode = require('vscode');
-const path = require('path');
-const { formatDateTime } = require('./templates');
-const { extractInlineTags, extractHeadings, findPrimaryDocHeading } = require('./indexer');
+import * as vscode from 'vscode';
+import * as path from 'path';
+import { formatDateTime } from './templates';
+import { extractInlineTags, extractHeadings, findPrimaryDocHeading } from './indexer';
 
 /**
  * Standard Obsidian built-in property keys and descriptions for IntelliSense.
@@ -388,12 +388,14 @@ function updateModifiedDateInMarkdown(content, targetKey = 'updated', dateFormat
 /**
  * Context-aware CompletionItemProvider for YAML frontmatter.
  */
-class FrontmatterCompletionProvider {
-  constructor(indexer) {
+class FrontmatterCompletionProvider implements vscode.CompletionItemProvider {
+  public indexer: any;
+
+  constructor(indexer: any) {
     this.indexer = indexer;
   }
 
-  provideCompletionItems(document, position, _token, _context) {
+  provideCompletionItems(document: any, position: any, _token?: any, _context?: any) {
     const config = vscode.workspace.getConfiguration('markgarden');
     const enabled = config.get('frontmatter.enableCompletions', true);
     if (!enabled) return null;
@@ -743,7 +745,7 @@ async function renamePropertyWorkspaceCommand(indexer) {
     return;
   }
 
-  const selectedKey = await vscode.window.showQuickPick(
+  const selectedKey = await vscode.window.showQuickPick<{ label: string; description: string; key: string }>(
     allKeys.map(k => {
       const notes = indexer.getNotesWithProperty(k);
       return {
@@ -874,7 +876,7 @@ async function syncTitleWithFilenameCommand() {
   vscode.window.showInformationMessage(`MarkGarden: Synced frontmatter title to "${targetTitle}".`);
 }
 
-module.exports = {
+export {
   BUILTIN_PROPERTIES,
   getFrontmatterInfo,
   isLineInsideFrontmatter,

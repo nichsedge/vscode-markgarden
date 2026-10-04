@@ -1,6 +1,118 @@
-const vscode = require('vscode');
-const fs = require('fs');
-const path = require('path');
+import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
+
+export interface HeadingInfo {
+  level: number;
+  text: string;
+  line: number;
+}
+
+export interface BlockInfo {
+  id: string;
+  line: number;
+  text: string;
+}
+
+export interface WikilinkTarget {
+  raw: string;
+  targetNote: string;
+  heading: string;
+  blockId: string;
+  alias: string;
+  isMedia: boolean;
+  isEmbed?: boolean;
+  line?: number;
+  index?: number;
+}
+
+export interface FrontmatterRange {
+  startLine: number;
+  endLine: number;
+}
+
+export interface ParsedFrontmatter {
+  title: string;
+  tags: Set<string>;
+  categories: Set<string>;
+  aliases: Set<string>;
+  properties: Map<string, any>;
+  propertyKeys: Set<string>;
+  hasFrontmatter: boolean;
+  frontmatterRange: FrontmatterRange | null;
+}
+
+export interface NoteMetadata {
+  filePath: string;
+  relativePath: string;
+  baseName: string;
+  title: string;
+  frontmatterTitle?: string;
+  headings: HeadingInfo[];
+  blocks: BlockInfo[];
+  blockMap: Map<string, BlockInfo>;
+  tags: Set<string>;
+  categories: Set<string>;
+  aliases: string[];
+  links: WikilinkTarget[];
+  resolvedLinks: Set<string>;
+  outboundMedia: string[];
+  properties: Map<string, any>;
+  mtime: number;
+  growth?: string;
+  published?: boolean;
+}
+
+export interface MediaMetadata {
+  filePath: string;
+  relativePath: string;
+  baseName: string;
+  extension: string;
+  mtime: number;
+}
+
+export interface BacklinkResult {
+  sourceFilePath: string;
+  sourceTitle: string;
+  relativePath: string;
+  line: number;
+  text: string;
+  isEmbed: boolean;
+}
+
+export interface UnlinkedMentionResult {
+  sourceFilePath: string;
+  sourceTitle: string;
+  relativePath: string;
+  line: number;
+  text: string;
+  mentionType: 'title' | 'alias';
+  mentionText: string;
+}
+
+export interface GraphNode {
+  id: string;
+  name: string;
+  path?: string;
+  group: number;
+  val: number;
+  type: 'note' | 'tag' | 'category' | 'media';
+  isCurrent?: boolean;
+  growth?: string;
+  published?: boolean;
+}
+
+export interface GraphLink {
+  source: string;
+  target: string;
+  isBacklink?: boolean;
+}
+
+export interface GraphData {
+  nodes: GraphNode[];
+  links: GraphLink[];
+  isLocal?: boolean;
+}
 
 /**
  * Strips surrounding single/double quotes from a value (if balanced).
@@ -59,16 +171,16 @@ function parseCommaList(val) {
  * Parses frontmatter YAML block from markdown content.
  * Returns an object with parsed properties (title, tags, categories, raw content).
  */
-function parseFrontmatter(content) {
+function parseFrontmatter(content: string) {
   const result = {
     title: '',
-    tags: new Set(),
-    categories: new Set(),
-    aliases: new Set(),
-    properties: new Map(),
-    propertyKeys: new Set(),
+    tags: new Set<string>(),
+    categories: new Set<string>(),
+    aliases: new Set<string>(),
+    properties: new Map<string, any>(),
+    propertyKeys: new Set<string>(),
     hasFrontmatter: false,
-    frontmatterRange: null
+    frontmatterRange: null as { startLine: number; endLine: number } | null
   };
 
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
@@ -224,8 +336,8 @@ function sanitizeContentForTags(content) {
 /**
  * Extracts inline #tags (e.g. #productivity, #project/web) from markdown text.
  */
-function extractInlineTags(content) {
-  const tags = new Set();
+function extractInlineTags(content: string): Set<string> {
+  const tags = new Set<string>();
   const sanitized = sanitizeContentForTags(content);
 
   // Match #tag where tag starts with a letter, underscore, or non-ASCII, followed by letters/digits/underscores/dashes/slashes
@@ -345,10 +457,22 @@ function isMediaFile(filename) {
   return MEDIA_EXTENSIONS.has(ext);
 }
 
+export interface ParsedWikilink {
+  raw: string;
+  targetNote: string;
+  heading: string;
+  blockId: string;
+  alias: string;
+  isMedia: boolean;
+  index?: number;
+  line?: number;
+  isEmbed?: boolean;
+}
+
 /**
  * Parses wikilink string (e.g. "Note Name#Section|Alias" or "Note#^block-id") into components.
  */
-function parseWikilinkTarget(rawLink) {
+function parseWikilinkTarget(rawLink: string): ParsedWikilink {
   let text = rawLink.trim();
   let alias = '';
   let heading = '';
@@ -485,6 +609,31 @@ function extractMediaLinks(content) {
  * Central Markdown Indexer for workspace notes.
  */
 class WorkspaceNotesIndexer {
+  public fileIndex: Map<string, any>;
+  public tagIndex: Map<string, Set<string>>;
+  public categoryIndex: Map<string, Set<string>>;
+  public titleToPathIndex: Map<string, Set<string>>;
+  public normalizedTitleIndex: Map<string, Set<string>>;
+  public mediaToPathIndex: Map<string, Set<string>>;
+  public propertyKeyIndex: Map<string, Set<string>>;
+  public propertyValueIndex: Map<string, Set<string>>;
+  private _onDidChangeIndex: vscode.EventEmitter<void>;
+  public onDidChangeIndex: vscode.Event<void>;
+  public isIndexing: boolean;
+  private _watcher: vscode.FileSystemWatcher | null;
+  private _debounceTimers: Map<string, any>;
+  private _disposables: vscode.Disposable[];
+  public backlinkIndex: Map<string, Set<string>>;
+  private _contentCache: Map<string, string>;
+  private _contentCacheMaxSize: number;
+  private _cachedTemplatesFolder: string;
+  private _cachedExcludeTemplates: boolean;
+  public _cachedAutoUpdateLinksOnRename: boolean;
+  public _cachedExcludeSegments: string[];
+  private _cachedTags: Array<{ tag: string; count: number; files: string[] }> | null;
+  private _cachedCategories: Array<{ category: string; count: number; files: string[] }> | null;
+  private _indexDirty: boolean;
+
   constructor() {
     this.fileIndex = new Map(); // filePath -> { title, relativePath, headings, tags, categories, links, resolvedLinks }
     this.tagIndex = new Map(); // tag -> Set<filePath>
@@ -722,7 +871,7 @@ class WorkspaceNotesIndexer {
   /**
    * Resolves a media file path by target filename.
    */
-  resolveMediaPath(targetMedia, sourceFilePath) {
+  resolveMediaPath(targetMedia: string, sourceFilePath?: string): string | null {
     if (!targetMedia) return null;
     let clean = targetMedia.trim();
     const pipeIdx = clean.indexOf('|');
@@ -1073,7 +1222,7 @@ class WorkspaceNotesIndexer {
     const headings = extractHeadings(content);
 
     // Merge tags
-    const allTags = new Set([...frontmatter.tags, ...inlineTags]);
+    const allTags = new Set<string>([...frontmatter.tags, ...inlineTags]);
     const primaryHeading = findPrimaryDocHeading(content, headings);
     const title = frontmatter.title || primaryHeading || baseName;
 
@@ -1237,7 +1386,7 @@ class WorkspaceNotesIndexer {
     }
 
     meta.resolvedLinks = [];
-    const targets = new Set();
+    const targets = new Set<string>();
     for (const link of meta.links) {
       if (!link.targetNote) continue;
       const targetPath = this.resolveNotePath(link.targetNote, filePath);
@@ -1356,7 +1505,7 @@ class WorkspaceNotesIndexer {
    * Resolves a target note name to an absolute file path.
    * Index-first strategy: prefers Map lookups over filesystem I/O.
    */
-  resolveNotePath(targetNote, sourceFilePath) {
+  resolveNotePath(targetNote: string, sourceFilePath?: string): string | null {
     if (!targetNote) return null;
     let clean = targetNote.trim();
     if (clean.endsWith('.md')) {
@@ -1759,7 +1908,7 @@ class WorkspaceNotesIndexer {
     }
 
     const targetMeta = this.fileIndex.get(targetFilePath);
-    const searchTerms = new Set();
+    const searchTerms = new Set<string>();
     if (targetMeta.baseName && targetMeta.baseName.length >= 2) searchTerms.add(targetMeta.baseName);
     if (targetMeta.title && targetMeta.title.length >= 2) searchTerms.add(targetMeta.title);
     if (targetMeta.frontmatterTitle && targetMeta.frontmatterTitle.length >= 2) searchTerms.add(targetMeta.frontmatterTitle);
@@ -1878,7 +2027,7 @@ class WorkspaceNotesIndexer {
   }
 }
 
-module.exports = {
+export {
   WorkspaceNotesIndexer,
   parseFrontmatter,
   extractInlineTags,

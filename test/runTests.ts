@@ -1,72 +1,8 @@
-const assert = require('assert');
-const Module = require('module');
+import './setup';
+import assert from 'assert';
+import Module from 'module';
 
-// Mock 'vscode' for standalone Node test execution
-const origRequire = Module.prototype.require;
-Module.prototype.require = function(path) {
-  if (path === 'vscode') {
-    return {
-      EventEmitter: class {
-        constructor() { this.event = () => ({ dispose() {} }); }
-        fire() {}
-        dispose() {}
-      },
-      Position: class { constructor(line, character) { this.line = line; this.character = character; } },
-      Range: class { constructor(start, end) { this.start = start; this.end = end; } },
-      Location: class { constructor(uri, rangeOrPosition) { this.uri = uri; this.range = rangeOrPosition; } },
-      DocumentLink: class { constructor(range, target) { this.range = range; this.target = target; this.tooltip = ''; } },
-      CompletionItem: class { constructor(label, kind) { this.label = label; this.kind = kind; this.insertText = label; } },
-      CompletionItemKind: { Property: 9, Keyword: 13, Folder: 18, Reference: 17, Value: 11, EnumMember: 19 },
-      SnippetString: class { constructor(val) { this.value = val; } },
-      TextEdit: { replace: (range, text) => ({ range, text }) },
-      WorkspaceEdit: class {
-        constructor() { this.edits = []; }
-        replace(uri, range, text) { this.edits.push({ uri, range, text }); }
-      },
-      MarkdownString: class {
-        constructor(val) { this.value = val || ''; this.isTrusted = false; this.supportHtml = false; }
-        appendMarkdown(str) { this.value += str; }
-      },
-      Uri: {
-        file: (p) => ({ fsPath: p, path: p, toString: () => `file://${p}` }),
-        parse: (s) => ({ fsPath: s, path: s, toString: () => s })
-      },
-      workspace: {
-        workspaceFolders: [],
-        getWorkspaceFolder: () => null,
-        getConfiguration: () => ({ get: (k, d) => d }),
-        applyEdit: (edit) => {
-          if (!Array.isArray(Module.prototype.__appliedWorkspaceBatches)) {
-            Module.prototype.__appliedWorkspaceBatches = [];
-          }
-          Module.prototype.__appliedWorkspaceBatches.push(edit.edits);
-          return Promise.resolve(true);
-        }
-      },
-      window: { showInformationMessage: () => {} },
-      commands: {},
-      languages: {
-        createDiagnosticCollection: () => {
-          const map = new Map();
-          return {
-            set: (uri, diags) => map.set(uri, diags),
-            delete: (uri) => map.delete(uri),
-            get: (uri) => map.get(uri) || [],
-            _map: map
-          };
-        }
-      },
-      Diagnostic: class { constructor(range, message, severity) { this.range = range; this.message = message; this.severity = severity; this.source = ''; this.code = ''; } },
-      DiagnosticSeverity: { Error: 0, Warning: 1, Information: 2, Hint: 3 },
-      ThemeIcon: class {},
-      TreeItem: class {},
-      TreeItemCollapsibleState: {}
-    };
-  }
-  return origRequire.apply(this, arguments);
-};
-
-const {
+import {
   WorkspaceNotesIndexer,
   parseFrontmatter,
   extractInlineTags,
@@ -80,28 +16,28 @@ const {
   isMediaFile,
   sanitizeContentForTags,
   maskExcludedRegions
-} = require('../src/indexer');
-const {
+} from '../src/indexer';
+import {
   buildNotePreviewMarkdown,
   stripFrontmatter
-} = require('../src/hoverProvider');
-const {
+} from '../src/hoverProvider';
+import {
   deriveDefaultTitle,
   generateRefactoredNoteContent
-} = require('../src/noteRefactor');
-const {
+} from '../src/noteRefactor';
+import {
   registerMarkdownItWikilinks
-} = require('../src/markdownItPlugin');
-const {
+} from '../src/markdownItPlugin';
+import {
   addTagToMarkdown,
   removeTagFromMarkdown,
   addCategoryToMarkdown,
   removeCategoryFromMarkdown,
   renameTagInMarkdown,
   renameCategoryInMarkdown
-} = require('../src/tagsCategories');
-const { processTemplate, formatDateTime, parseTemplateMetadata } = require('../src/templates');
-const {
+} from '../src/tagsCategories';
+import { processTemplate, formatDateTime, parseTemplateMetadata } from '../src/templates';
+import {
   getFrontmatterInfo,
   formatFrontmatterInMarkdown,
   setPropertyInMarkdown,
@@ -110,13 +46,13 @@ const {
   convertInlineTagsToFrontmatterInMarkdown,
   updateModifiedDateInMarkdown,
   FrontmatterCompletionProvider
-} = require('../src/frontmatter');
-const {
+} from '../src/frontmatter';
+import {
   MarkGardenDocumentLinkProvider,
   MarkGardenCompletionItemProvider
-} = require('../src/wikilinks');
+} from '../src/wikilinks';
 
-const {
+import {
   detectGrowthStage,
   detectPublishStatus,
   setGrowthStageInMarkdown,
@@ -124,14 +60,14 @@ const {
   auditGarden,
   resolveNoteFromIndexer,
   DigitalGardenDiagnosticsProvider
-} = require('../src/digitalGarden');
+} from '../src/digitalGarden';
 
-const {
+import {
   OBSIDIAN_CALLOUT_TYPES,
   parseCalloutHeader,
   formatCalloutBlock,
   markdownItCalloutsPlugin
-} = require('../src/callouts');
+} from '../src/callouts';
 
 let testsPassed = 0;
 let testsFailed = 0;
@@ -683,7 +619,13 @@ console.log('\nMarkdown Preview Renderer Plugin:');
 
 test('registerMarkdownItWikilinks transforms [[wikilinks]] and ![[embeds]] into HTML AST tokens', () => {
   class MockToken {
-    constructor(type, tag, nesting) {
+    type: string;
+    tag: string;
+    nesting: number;
+    content: string;
+    children: any[] | null;
+    attrs: any[] | null;
+    constructor(type: string, tag: string, nesting: number) {
       this.type = type;
       this.tag = tag;
       this.nesting = nesting;
@@ -694,19 +636,22 @@ test('registerMarkdownItWikilinks transforms [[wikilinks]] and ![[embeds]] into 
   }
 
   class MockMarkdownIt {
+    Token: typeof MockToken;
+    rules: Array<(state: any) => void>;
+    core: { ruler: { after: (afterRule: string, name: string, fn: (state: any) => void) => void } };
     constructor() {
       this.Token = MockToken;
       this.rules = [];
       this.core = {
         ruler: {
-          after: (afterRule, name, fn) => {
+          after: (_afterRule: string, _name: string, fn: (state: any) => void) => {
             this.rules.push(fn);
           }
         }
       };
     }
 
-    renderInline(text) {
+    renderInline(text: string) {
       const inlineToken = new MockToken('inline', '', 0);
       const textToken = new MockToken('text', '', 0);
       textToken.content = text;
@@ -1099,7 +1044,6 @@ test('auditGarden calculates growth breakdown, publish breakdown, broken links, 
 });
 
 test('resolveNoteFromIndexer resolves by title/alias and returns null for unknown targets', () => {
-  const { WorkspaceNotesIndexer } = require('../src/indexer');
   const indexer = new WorkspaceNotesIndexer();
   indexer.indexFileContent('/vault/garden.md', `---\ntitle: Garden\naliases: [Paradise]\n---\nContent`);
 
@@ -1114,7 +1058,6 @@ test('resolveNoteFromIndexer resolves by title/alias and returns null for unknow
 });
 
 test('auditGarden handles an empty workspace without crashing', () => {
-  const { WorkspaceNotesIndexer } = require('../src/indexer');
   const audit = auditGarden(new WorkspaceNotesIndexer(), {});
   assert.strictEqual(audit.totalNotes, 0);
   assert.deepStrictEqual(audit.brokenLinks, []);
@@ -1123,7 +1066,6 @@ test('auditGarden handles an empty workspace without crashing', () => {
 });
 
 test('DigitalGardenDiagnosticsProvider flags broken links and privacy leaks', () => {
-  const { WorkspaceNotesIndexer } = require('../src/indexer');
   const indexer = new WorkspaceNotesIndexer();
   indexer.indexFileContent('/vault/public.md', `---\ntitle: Public\npublish_external: true\n---\nSee [[Missing]] and [[Private]] and [[Public]].`);
   indexer.indexFileContent('/vault/private.md', `---\ntitle: Private\npublish_external: false\n---\nSecrets.`);
@@ -1137,50 +1079,48 @@ test('DigitalGardenDiagnosticsProvider flags broken links and privacy leaks', ()
   };
   provider.updateDiagnostics(mockDoc);
 
-  const diags = provider.diagnosticCollection.get(mockDoc.uri);
+  const diags = provider.diagnosticCollection.get(mockDoc.uri as any);
   assert.strictEqual(diags.length, 2);
   const codes = diags.map(d => d.code).sort();
   assert.deepStrictEqual(codes, ['broken-wikilink', 'privacy-leak']);
 
   // Non-markdown docs are ignored
   provider.updateDiagnostics({ ...mockDoc, languageId: 'plaintext' });
-  assert.strictEqual(provider.diagnosticCollection.get(mockDoc.uri).length, 2);
+  assert.strictEqual(provider.diagnosticCollection.get(mockDoc.uri as any).length, 2);
 });
 
 test('updateWikilinksOnRename rewrites links pointing at the renamed note', async () => {
-  const { WorkspaceNotesIndexer } = require('../src/indexer');
   const indexer = new WorkspaceNotesIndexer();
   indexer.indexFileContent('/vault/b.md', `---\ntitle: B\n---\nContent`);
   indexer.indexFileContent('/vault/a.md', `Links: [[b]] and [[b|alias]] and [[b#Section]] but not [[c]].`);
 
-  const batchIndexBefore = (Module.prototype.__appliedWorkspaceBatches || []).length;
+  const batchIndexBefore = ((Module.prototype as any).__appliedWorkspaceBatches || []).length;
   const count = await indexer.updateWikilinksOnRename('/vault/b.md', '/vault/renamed-b.md');
 
   assert.strictEqual(count, 3);
-  const batches = Module.prototype.__appliedWorkspaceBatches || [];
+  const batches = (Module.prototype as any).__appliedWorkspaceBatches || [];
   assert.strictEqual(batches.length, batchIndexBefore + 1);
   const edits = batches[batchIndexBefore];
   assert.strictEqual(edits.length, 3);
-  assert.deepStrictEqual(edits.map(e => e.text), ['renamed-b', 'renamed-b', 'renamed-b']);
+  assert.deepStrictEqual(edits.map((e: any) => e.text), ['renamed-b', 'renamed-b', 'renamed-b']);
 });
 test('updateWikilinksOnRename ignores unrelated renames and non-markdown files', async () => {
-  const { WorkspaceNotesIndexer } = require('../src/indexer');
   const indexer = new WorkspaceNotesIndexer();
   indexer.indexFileContent('/vault/b.md', `[[a]]`);
 
-  const batchCountBefore = (Module.prototype.__appliedWorkspaceBatches || []).length;
+  const batchCountBefore = ((Module.prototype as any).__appliedWorkspaceBatches || []).length;
   // Renaming a note nobody links to
   assert.strictEqual(await indexer.updateWikilinksOnRename('/vault/b.md', '/vault/b2.md'), 0);
   // Non-markdown target
   assert.strictEqual(await indexer.updateWikilinksOnRename('/vault/a.png', '/vault/b.png'), 0);
-  assert.strictEqual((Module.prototype.__appliedWorkspaceBatches || []).length, batchCountBefore);
+  assert.strictEqual(((Module.prototype as any).__appliedWorkspaceBatches || []).length, batchCountBefore);
   // Setting disabled
   indexer.indexFileContent('/vault/c.md', `[[b]]`);
   indexer._cachedAutoUpdateLinksOnRename = false;
   try {
-    const before = (Module.prototype.__appliedWorkspaceBatches || []).length;
+    const before = ((Module.prototype as any).__appliedWorkspaceBatches || []).length;
     assert.strictEqual(await indexer.updateWikilinksOnRename('/vault/b.md', '/vault/renamed-b.md'), 0);
-    assert.strictEqual((Module.prototype.__appliedWorkspaceBatches || []).length, before);
+    assert.strictEqual(((Module.prototype as any).__appliedWorkspaceBatches || []).length, before);
   } finally {
     indexer._cachedAutoUpdateLinksOnRename = true;
   }
@@ -1231,10 +1171,10 @@ test('formatCalloutBlock wraps content properly with header and folding markers'
 
 test('markdownItCalloutsPlugin transforms callouts into styled HTML containers and details tags', () => {
   // Simple mock of markdown-it environment
-  const mockMd = {
+  const mockMd: any = {
     core: {
       ruler: {
-        after: (afterName, ruleName, fn) => {
+        after: (afterName: any, ruleName: any, fn: any) => {
           mockMd._rule = fn;
         }
       }
@@ -1243,7 +1183,7 @@ test('markdownItCalloutsPlugin transforms callouts into styled HTML containers a
       rules: {}
     },
     utils: {
-      escapeHtml: s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      escapeHtml: (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     }
   };
 
@@ -1343,7 +1283,7 @@ test('MarkGardenCompletionItemProvider provides live autocompletions for active 
     lineAt: () => ({ text: 'Link to [[' }),
     getText: () => 'Link to [['
   };
-  const items = await provider.provideCompletionItems(mockDoc, { line: 0, character: 11 });
+  const items = await provider.provideCompletionItems(mockDoc as any, { line: 0, character: 11 } as any);
   assert.strictEqual(items.some(i => i.label === 'Alpha'), true);
   assert.strictEqual(items.some(i => i.label === 'Alpha Note'), true);
   assert.strictEqual(items.some(i => i.label === 'Alpha Alias'), true);
@@ -1355,7 +1295,7 @@ test('MarkGardenCompletionItemProvider provides live autocompletions for active 
     lineAt: () => ({ text: 'Link to [[Alpha#' }),
     getText: () => 'Link to [[Alpha#'
   };
-  const headingItems = await provider.provideCompletionItems(mockHeadingDoc, { line: 0, character: 16 });
+  const headingItems = await provider.provideCompletionItems(mockHeadingDoc as any, { line: 0, character: 16 } as any);
   assert.strictEqual(headingItems.some(i => i.label === 'Topic A'), true);
 
   // 3. Block reference completion inside [[Alpha#^
@@ -1364,7 +1304,7 @@ test('MarkGardenCompletionItemProvider provides live autocompletions for active 
     lineAt: () => ({ text: 'Link to [[Alpha#^' }),
     getText: () => 'Link to [[Alpha#^'
   };
-  const blockItems = await provider.provideCompletionItems(mockBlockDoc, { line: 0, character: 17 });
+  const blockItems = await provider.provideCompletionItems(mockBlockDoc as any, { line: 0, character: 17 } as any);
   assert.strictEqual(blockItems.some(i => i.label === '^block1'), true);
 });
 
@@ -1376,18 +1316,18 @@ test('MarkGardenDocumentLinkProvider dynamically resolves updated targets withou
   const doc = {
     fileName: '/vault/Source.md',
     getText: () => 'See [[Target]] for details.',
-    positionAt: (idx) => ({ line: 0, character: idx }),
+    positionAt: (idx: number) => ({ line: 0, character: idx }),
     version: 1,
     uri: { toString: () => 'file:///vault/Source.md' }
   };
 
-  const links1 = await provider.provideDocumentLinks(doc);
+  const links1 = await provider.provideDocumentLinks(doc as any);
   assert.strictEqual(links1.length, 1);
   assert.strictEqual(links1[0].tooltip.includes('Open "Target"'), true);
 
   // Now delete Target.md and verify tooltip reflects "Create" rather than stale "Open"
   indexer.handleFileDelete('/vault/Target.md');
-  const links2 = await provider.provideDocumentLinks(doc);
+  const links2 = await provider.provideDocumentLinks(doc as any);
   assert.strictEqual(links2.length, 1);
   assert.strictEqual(links2[0].tooltip.includes('Create "Target"'), true);
 });

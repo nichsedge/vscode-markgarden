@@ -1,8 +1,20 @@
-const vscode = require('vscode');
-const path = require('path');
+import * as vscode from 'vscode';
+import * as path from 'path';
 
 class GraphViewManager {
-  constructor(context, indexer) {
+  public context: vscode.ExtensionContext;
+  public indexer: any;
+  public panel: vscode.WebviewPanel | null;
+  public isLocal: boolean;
+  public localDepth: number;
+  public activeFilePath: string | null;
+  private _disposables: vscode.Disposable[];
+  private _panelDisposables: vscode.Disposable[];
+  private _cachedTagList: any;
+  private _cachedCategoryList: any;
+  private _indexDirty: boolean;
+
+  constructor(context: vscode.ExtensionContext, indexer: any) {
     this.context = context;
     this.indexer = indexer;
     this.panel = null;
@@ -2024,6 +2036,6 @@ class GraphViewManager {
   }
 }
 
-module.exports = {
+export {
   GraphViewManager
 };

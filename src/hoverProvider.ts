@@ -1,20 +1,25 @@
-const vscode = require('vscode');
-const fs = require('fs');
-const path = require('path');
-const { parseWikilinkTarget, extractHeadingSection, extractBlockContent, parseFrontmatter } = require('./indexer');
-const { getWikilinkAtPosition, resolveMediaFilePath } = require('./wikilinks');
+import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
+import { parseWikilinkTarget, extractHeadingSection, extractBlockContent, parseFrontmatter, WikilinkTarget } from './indexer';
+import { getWikilinkAtPosition, resolveMediaFilePath } from './wikilinks';
 
 /**
  * Strips frontmatter block from raw markdown content for clean hover display.
  */
-function stripFrontmatter(content) {
+export function stripFrontmatter(content: string): string {
   return content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '').trim();
 }
 
 /**
  * Builds rich markdown preview for a note.
  */
-function buildNotePreviewMarkdown(targetPath, parsed, content, maxLength = 1000) {
+export function buildNotePreviewMarkdown(
+  targetPath: string,
+  parsed: WikilinkTarget,
+  content: string,
+  maxLength: number = 1000
+): vscode.MarkdownString {
   const md = new vscode.MarkdownString();
   md.isTrusted = true;
   md.supportHtml = true;
@@ -56,7 +61,7 @@ function buildNotePreviewMarkdown(targetPath, parsed, content, maxLength = 1000)
   // Whole note preview
   md.appendMarkdown(`### 📄 **${displayTitle}**\n\n`);
 
-  const badges = [];
+  const badges: string[] = [];
   if (frontmatter.tags && frontmatter.tags.size > 0) {
     badges.push(`🏷️ ` + Array.from(frontmatter.tags).map(t => `\`#${t}\``).join(' '));
   }
@@ -77,7 +82,7 @@ function buildNotePreviewMarkdown(targetPath, parsed, content, maxLength = 1000)
   return md;
 }
 
-function formatFileSize(bytes) {
+function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -86,14 +91,16 @@ function formatFileSize(bytes) {
 /**
  * HoverProvider that displays instant rich markdown previews for [[wikilinks]], ![[embeds]], #headings, ^block-ids, and media attachments.
  */
-class MarkGardenHoverProvider {
-  constructor(indexer) {
+export class MarkGardenHoverProvider implements vscode.HoverProvider {
+  public indexer: any;
+
+  constructor(indexer: any) {
     this.indexer = indexer;
   }
 
-  async provideHover(document, position) {
+  async provideHover(document: vscode.TextDocument, position: vscode.Position): Promise<vscode.Hover | null> {
     const config = vscode.workspace.getConfiguration('markgarden');
-    const enabled = config.get('hoverPreviewEnabled', true);
+    const enabled = config.get<boolean>('hoverPreviewEnabled', true);
     if (!enabled) return null;
 
     const link = getWikilinkAtPosition(document, position);
@@ -120,7 +127,7 @@ class MarkGardenHoverProvider {
         }
       }
 
-      if (mediaExists) {
+      if (mediaExists && mediaPath) {
         const ext = path.extname(mediaPath).toLowerCase();
         const imageExts = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico'];
         let sizeStr = '';
@@ -151,7 +158,7 @@ class MarkGardenHoverProvider {
       ? this.indexer.resolveNotePath(parsed.targetNote, document.fileName)
       : document.fileName;
 
-    const maxLength = config.get('hoverPreviewMaxLength', 1200);
+    const maxLength = config.get<number>('hoverPreviewMaxLength', 1200);
 
     // Non-existent note preview
     let targetExists = false;
@@ -185,9 +192,3 @@ class MarkGardenHoverProvider {
     }
   }
 }
-
-module.exports = {
-  MarkGardenHoverProvider,
-  buildNotePreviewMarkdown,
-  stripFrontmatter
-};

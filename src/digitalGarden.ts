@@ -1,5 +1,5 @@
-const vscode = require('vscode');
-const path = require('path');
+import * as vscode from 'vscode';
+import * as path from 'path';
 
 /**
  * Growth stage definitions, icons, and aliases.
@@ -34,10 +34,10 @@ const GROWTH_STAGES = {
  * @param {object} [config]
  * @returns {{ key: string, label: string, icon: string, source: string }}
  */
-function detectGrowthStage(noteData, config = {}) {
-  const growthKey = (config.growthProperty || 'growth').toLowerCase();
+function detectGrowthStage(noteData: any, config: any = {}) {
+  const growthKey = (config?.growthProperty || 'growth').toLowerCase();
   const properties = noteData && noteData.properties ? noteData.properties : new Map();
-  const tags = noteData && noteData.tags ? Array.from(noteData.tags) : [];
+  const tags: string[] = noteData && noteData.tags ? Array.from(noteData.tags) : [];
 
   // Check designated frontmatter property first
   const keysToCheck = [growthKey, 'growth', 'stage', 'status', 'maturity'];
@@ -54,7 +54,7 @@ function detectGrowthStage(noteData, config = {}) {
 
   // Check tags for growth stage keywords
   for (const tag of tags) {
-    const cleanTag = tag.toLowerCase().replace(/^#/, '');
+    const cleanTag = String(tag).toLowerCase().replace(/^#/, '');
     for (const [stageKey, meta] of Object.entries(GROWTH_STAGES)) {
       if (meta.aliases.some(alias => cleanTag === alias || cleanTag.endsWith(`/${alias}`))) {
         return { key: stageKey, label: meta.label, icon: meta.icon, source: `tag:#${tag}` };
@@ -71,10 +71,10 @@ function detectGrowthStage(noteData, config = {}) {
  * @param {object} [config]
  * @returns {{ isPublished: boolean, source: string }}
  */
-function detectPublishStatus(noteData, config = {}) {
-  const publishKey = (config.publishProperty || 'publish_external').toLowerCase();
+function detectPublishStatus(noteData: any, config: any = {}) {
+  const publishKey = (config?.publishProperty || 'publish_external').toLowerCase();
   const properties = noteData && noteData.properties ? noteData.properties : new Map();
-  const tags = noteData && noteData.tags ? Array.from(noteData.tags) : [];
+  const tags: string[] = noteData && noteData.tags ? Array.from(noteData.tags) : [];
 
   // 1. Check draft flag
   if (properties.has('draft')) {
@@ -100,7 +100,7 @@ function detectPublishStatus(noteData, config = {}) {
 
   // 3. Check tags
   for (const tag of tags) {
-    const cleanTag = tag.toLowerCase().replace(/^#/, '');
+    const cleanTag = String(tag).toLowerCase().replace(/^#/, '');
     if (cleanTag === 'published' || cleanTag === 'publish' || cleanTag === 'public') {
       return { isPublished: true, source: `tag:#${tag}` };
     }
@@ -198,7 +198,7 @@ function getNoteMeta(indexer, filePath) {
   return map.get(filePath) || null;
 }
 
-function resolveNoteFromIndexer(indexer, target, sourceFilePath) {
+function resolveNoteFromIndexer(indexer: any, target: string, sourceFilePath?: string) {
   if (!indexer || !target) return null;
   if (indexer.resolveNotePath) {
     const targetPath = indexer.resolveNotePath(target, sourceFilePath);
@@ -355,7 +355,9 @@ function auditGarden(indexer, config = {}) {
  * Tree item representing categories or notes in the Digital Garden view.
  */
 class DigitalGardenTreeItem extends vscode.TreeItem {
-  constructor(label, collapsibleState, contextValue, options = {}) {
+  public options: any;
+
+  constructor(label: string, collapsibleState: vscode.TreeItemCollapsibleState, contextValue?: string, options: any = {}) {
     super(label, collapsibleState);
     this.contextValue = contextValue;
     this.options = options;
@@ -378,10 +380,15 @@ class DigitalGardenTreeItem extends vscode.TreeItem {
 /**
  * TreeDataProvider for the Digital Garden sidebar view.
  */
-class DigitalGardenTreeDataProvider {
-  constructor(indexer) {
+class DigitalGardenTreeDataProvider implements vscode.TreeDataProvider<any> {
+  public indexer: any;
+  private _onDidChangeTreeData: vscode.EventEmitter<any>;
+  public onDidChangeTreeData: vscode.Event<any>;
+  public cachedAudit: any;
+
+  constructor(indexer: any) {
     this.indexer = indexer;
-    this._onDidChangeTreeData = new vscode.EventEmitter();
+    this._onDidChangeTreeData = new vscode.EventEmitter<any>();
     this.onDidChangeTreeData = this._onDidChangeTreeData.event;
     this.cachedAudit = null;
 
@@ -392,7 +399,7 @@ class DigitalGardenTreeDataProvider {
 
   refresh() {
     this.cachedAudit = null;
-    this._onDidChangeTreeData.fire();
+    this._onDidChangeTreeData.fire(undefined);
   }
 
   getAudit() {
@@ -621,7 +628,11 @@ class DigitalGardenTreeDataProvider {
  * Displays interactive Stage and Publish buttons for the active editor.
  */
 class DigitalGardenStatusBarManager {
-  constructor(indexer) {
+  public indexer: any;
+  public growthStatusBarItem: vscode.StatusBarItem;
+  public publishStatusBarItem: vscode.StatusBarItem;
+
+  constructor(indexer: any) {
     this.indexer = indexer;
     this.growthStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 102);
     this.publishStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 101);
@@ -686,7 +697,11 @@ class DigitalGardenStatusBarManager {
  * Surfaces warnings for broken wikilinks and public-to-private privacy leaks.
  */
 class DigitalGardenDiagnosticsProvider {
-  constructor(indexer) {
+  public indexer: any;
+  public diagnosticCollection: vscode.DiagnosticCollection;
+  public timeout: any;
+
+  constructor(indexer: any) {
     this.indexer = indexer;
     this.diagnosticCollection = vscode.languages.createDiagnosticCollection('markgarden-garden');
     this.timeout = null;
@@ -889,7 +904,7 @@ async function runGardenAuditCommand(indexer) {
   vscode.window.showInformationMessage(msg);
 }
 
-module.exports = {
+export {
   GROWTH_STAGES,
   detectGrowthStage,
   detectPublishStatus,
