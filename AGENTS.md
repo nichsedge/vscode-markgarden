@@ -26,6 +26,7 @@ MarkGarden is a VS Code extension providing Obsidian-like digital gardening and 
   - [`setup.ts`](file:///home/al/Projects/markgarden/test/setup.ts): Test runner setup and VS Code module mocking.
   - [`mockVscode.ts`](file:///home/al/Projects/markgarden/test/mockVscode.ts): Mock implementation of the VS Code extension API.
   - [`runTests.ts`](file:///home/al/Projects/markgarden/test/runTests.ts): Standalone unit test suite using Bun test runner.
+  - [`markgarden.test.ts`](file:///home/al/Projects/markgarden/test/markgarden.test.ts): Bun test auto-discovery entrypoint.
 
 ## Quality & Release Commands
 
