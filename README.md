@@ -121,7 +121,19 @@ Transform your vault into a well-tended digital garden with full Quartz & Obsidi
   - `MarkGarden: Toggle Publish Status` (`Ctrl+Alt+P` / `Cmd+Alt+P`)
   - `MarkGarden: Set Growth Stage`
   - `MarkGarden: Run Digital Garden Audit`
+  - `MarkGarden: Export Digital Garden (Published Notes)` (copies published notes to a clean static-site folder for Quartz, Hugo, or Astro)
   - `MarkGarden: Refresh Digital Garden`
+* **Quick-Fix Code Actions**:
+  - Yellow warning diagnostics for broken wikilinks offer a 1-click Quick Fix: **Create missing note** or **Replace with existing note**.
+
+### 🤖 Model Context Protocol (MCP) Server
+MarkGarden includes an embedded Model Context Protocol server exposing your vault to AI agents:
+* `markgarden_help`: Complete usage guide for tools & extension actions.
+* `list_notes`, `get_note`, `search_notes`: Note listings, full content inspection, and contextual search.
+* `list_tags`, `list_categories`, `find_notes_by_tag`, `find_notes_by_category`: Taxonomy queries.
+* `get_backlinks`, `get_outgoing_links`: Graph relationship queries for any note.
+* `get_vault_audit`: Automated vault health check (growth breakdown, broken links, privacy leaks, orphans).
+* `create_note`, `append_daily_note`: Automated note authoring and daily journaling directly from AI assistants.
 
 ### 💡 Obsidian Callouts & Admonitions (`> [!note]`)
 Author expressive, beautiful callout blocks with standard Obsidian syntax:

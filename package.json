@@ -38,7 +38,7 @@
     "package": "vsce package",
     "publish": "vsce publish",
     "lint": "eslint . --ext .ts",
-    "test": "bun test/runTests.ts"
+    "test": "bun test"
   },
   "devDependencies": {
     "@types/bun": "^1.4.2",
@@ -228,6 +228,12 @@
         "title": "Run Digital Garden Audit",
         "category": "MarkGarden",
         "icon": "$(pulse)"
+      },
+      {
+        "command": "markgarden.exportDigitalGarden",
+        "title": "Export Digital Garden (Published Notes)",
+        "category": "MarkGarden",
+        "icon": "$(cloud-upload)"
       },
       {
         "command": "markgarden.refreshDigitalGarden",

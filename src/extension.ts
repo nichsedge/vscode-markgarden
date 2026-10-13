@@ -41,9 +41,11 @@ import {
   DigitalGardenTreeDataProvider,
   DigitalGardenStatusBarManager,
   DigitalGardenDiagnosticsProvider,
+  DigitalGardenCodeActionProvider,
   togglePublishStatusCommand,
   setGrowthStageCommand,
-  runGardenAuditCommand
+  runGardenAuditCommand,
+  exportDigitalGardenCommand
 } from './digitalGarden';
 
 import {
@@ -85,6 +87,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const hashtagCompletionProvider = new MarkGardenHashtagCompletionItemProvider(indexer);
   const frontmatterCompletionProvider = new FrontmatterCompletionProvider(indexer);
   const hoverProvider = new MarkGardenHoverProvider(indexer);
+  const gardenCodeActionProvider = new DigitalGardenCodeActionProvider(indexer);
 
   context.subscriptions.push(
     vscode.languages.registerDocumentLinkProvider(markdownSelector, docLinkProvider),
@@ -92,7 +95,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.languages.registerCompletionItemProvider(markdownSelector, wikilinkCompletionProvider, '[', '#', '^', '/', '|'),
     vscode.languages.registerCompletionItemProvider(markdownSelector, hashtagCompletionProvider, '#'),
     vscode.languages.registerCompletionItemProvider(markdownSelector, frontmatterCompletionProvider, ':', ' ', '[', '-', '\n', '#'),
-    vscode.languages.registerHoverProvider(markdownSelector, hoverProvider)
+    vscode.languages.registerHoverProvider(markdownSelector, hoverProvider),
+    vscode.languages.registerCodeActionsProvider(markdownSelector, gardenCodeActionProvider, {
+      providedCodeActionKinds: [vscode.CodeActionKind.QuickFix]
+    })
   );
 
   // Register Auto-update Modified Date on Save Handler
@@ -171,6 +177,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('markgarden.togglePublishStatus', () => togglePublishStatusCommand(indexer, digitalGardenStatusBarManager, digitalGardenTreeDataProvider)),
     vscode.commands.registerCommand('markgarden.setGrowthStage', () => setGrowthStageCommand(indexer, digitalGardenStatusBarManager, digitalGardenTreeDataProvider)),
     vscode.commands.registerCommand('markgarden.runGardenAudit', () => runGardenAuditCommand(indexer)),
+    vscode.commands.registerCommand('markgarden.exportDigitalGarden', () => exportDigitalGardenCommand(indexer)),
     vscode.commands.registerCommand('markgarden.refreshDigitalGarden', () => digitalGardenTreeDataProvider.refresh()),
 
     // Obsidian Callouts

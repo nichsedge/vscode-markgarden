@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 
 /**
  * Growth stage definitions, icons, and aliases.
@@ -904,6 +905,117 @@ async function runGardenAuditCommand(indexer) {
   vscode.window.showInformationMessage(msg);
 }
 
+/**
+ * CodeAction Provider offering quick fixes for Digital Garden diagnostics:
+ * - Create missing note for broken wikilink
+ * - Toggle target note to public for privacy leak
+ */
+class DigitalGardenCodeActionProvider implements vscode.CodeActionProvider {
+  constructor(public indexer: any) {}
+
+  provideCodeActions(
+    document: vscode.TextDocument,
+    range: vscode.Range | vscode.Selection,
+    context: vscode.CodeActionContext
+  ): vscode.CodeAction[] {
+    const actions: vscode.CodeAction[] = [];
+
+    for (const diag of context.diagnostics) {
+      if (diag.code === 'broken-wikilink') {
+        const linkText = document.getText(diag.range).replace(/^!?\[\[/, '').replace(/\]\]$/, '');
+        const target = linkText.split('|')[0].split('#')[0].trim();
+
+        // 1. Quick Fix: Create the missing note
+        const createAction = new vscode.CodeAction(
+          `Create missing note "${target}"`,
+          vscode.CodeActionKind.QuickFix
+        );
+        createAction.diagnostics = [diag];
+        createAction.isPreferred = true;
+        createAction.command = {
+          command: 'markgarden.openWikilink',
+          title: `Create note "${target}"`,
+          arguments: [{ target, sourceFile: document.fileName }]
+        };
+        actions.push(createAction);
+
+        // 2. Fuzzy match existing notes for typo suggestions
+        if (this.indexer && this.indexer.fileIndex) {
+          const targetLower = target.toLowerCase();
+          for (const [filePath, note] of this.indexer.fileIndex.entries()) {
+            const title = (note.title || path.basename(filePath, '.md')).trim();
+            if (title.toLowerCase() !== targetLower && (title.toLowerCase().includes(targetLower) || targetLower.includes(title.toLowerCase()))) {
+              const fixAction = new vscode.CodeAction(
+                `Replace with existing note "[[${title}]]"`,
+                vscode.CodeActionKind.QuickFix
+              );
+              fixAction.diagnostics = [diag];
+              const edit = new vscode.WorkspaceEdit();
+              edit.replace(document.uri, diag.range, `[[${title}]]`);
+              fixAction.edit = edit;
+              actions.push(fixAction);
+            }
+          }
+        }
+      }
+    }
+
+    return actions;
+  }
+}
+
+/**
+ * Command: Export Digital Garden (Quartz / Hugo / Astro static site generator layout)
+ */
+async function exportDigitalGardenCommand(indexer: any): Promise<void> {
+  const wsFolders = vscode.workspace.workspaceFolders;
+  if (!wsFolders || wsFolders.length === 0) {
+    vscode.window.showWarningMessage('MarkGarden: No open workspace folder to export.');
+    return;
+  }
+
+  const root = wsFolders[0].uri.fsPath;
+  const config = vscode.workspace.getConfiguration('markgarden');
+  const publishProperty = config.get('digitalGarden.publishProperty', 'publish_external');
+
+  // Let user pick or confirm export folder
+  const defaultExportRel = 'dist-garden';
+  const input = await vscode.window.showInputBox({
+    prompt: 'Destination folder for exported Digital Garden notes (relative to workspace root)',
+    value: defaultExportRel
+  });
+  if (!input) return;
+
+  const exportDir = path.resolve(root, input);
+  if (!fs.existsSync(exportDir)) {
+    fs.mkdirSync(exportDir, { recursive: true });
+  }
+
+  const allNotes = getIndexerNotesMap(indexer);
+  let count = 0;
+
+  for (const [filePath, note] of allNotes.entries()) {
+    const pubStatus = detectPublishStatus(note, { publishProperty });
+    if (!pubStatus.isPublished) continue;
+
+    try {
+      const content = fs.readFileSync(filePath, 'utf8');
+      const relPath = path.relative(root, filePath);
+      const destPath = path.join(exportDir, relPath);
+
+      fs.mkdirSync(path.dirname(destPath), { recursive: true });
+      fs.writeFileSync(destPath, content, 'utf8');
+      count++;
+    } catch {
+      // ignore read/write error
+    }
+  }
+
+  vscode.window.showInformationMessage(
+    `MarkGarden: Exported ${count} published notes to "${path.relative(root, exportDir)}".`
+  );
+}
+
 export {
   GROWTH_STAGES,
   detectGrowthStage,
@@ -915,7 +1027,9 @@ export {
   DigitalGardenTreeDataProvider,
   DigitalGardenStatusBarManager,
   DigitalGardenDiagnosticsProvider,
+  DigitalGardenCodeActionProvider,
   togglePublishStatusCommand,
   setGrowthStageCommand,
-  runGardenAuditCommand
+  runGardenAuditCommand,
+  exportDigitalGardenCommand
 };

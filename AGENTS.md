@@ -19,6 +19,7 @@ MarkGarden is a VS Code extension providing Obsidian-like digital gardening and 
   - [`hoverProvider.ts`](file:///home/al/Projects/markgarden/src/hoverProvider.ts): Rich hover preview for wikilinks and note contents.
   - [`noteRefactor.ts`](file:///home/al/Projects/markgarden/src/noteRefactor.ts): Note splitting and Zettelkasten refactoring.
   - [`tagsCategories.ts`](file:///home/al/Projects/markgarden/src/tagsCategories.ts): Tag and category management tree views.
+  - [`parserUtils.ts`](file:///home/al/Projects/markgarden/src/parserUtils.ts): Pure markdown, YAML frontmatter, and wikilink parser functions with zero VS Code dependencies.
   - [`mcpServer.ts`](file:///home/al/Projects/markgarden/src/mcpServer.ts): Embedded Model Context Protocol (MCP) server providing vault query tools.
   - [`mcpProvider.ts`](file:///home/al/Projects/markgarden/src/mcpProvider.ts): VS Code MCP server definition provider integration.
 - `dist/`: CommonJS runtime bundles targeting Node (`dist/extension.js` and `dist/mcpServer.js`).

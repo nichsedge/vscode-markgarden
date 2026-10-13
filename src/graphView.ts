@@ -730,6 +730,7 @@ class GraphViewManager {
       <div class="btn-row">
         <button class="btn-action" id="btn-reset-view" title="Fit graph to view">Fit View</button>
         <button class="btn-action" id="btn-toggle-physics">Pause</button>
+        <button class="btn-action" id="btn-export-png" title="Export graph as PNG image">Export PNG</button>
         <button class="btn-action" id="btn-reset-filters" title="Reset all filters and physics forces to defaults">Reset</button>
       </div>
 
@@ -776,6 +777,7 @@ class GraphViewManager {
     const linkDistVal = document.getElementById('link-dist-val');
     const btnResetView = document.getElementById('btn-reset-view');
     const btnTogglePhysics = document.getElementById('btn-toggle-physics');
+    const btnExportPng = document.getElementById('btn-export-png');
     const btnResetFilters = document.getElementById('btn-reset-filters');
     const btnTogglePanel = document.getElementById('btn-toggle-panel');
     const controlsPanel = document.getElementById('controls-panel');
@@ -1952,6 +1954,18 @@ class GraphViewManager {
       btnTogglePhysics.textContent = physicsRunning ? 'Pause' : 'Resume';
       if (physicsRunning) {
         requestRender();
+      }
+    });
+
+    btnExportPng.addEventListener('click', () => {
+      try {
+        const dataUrl = canvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.download = 'markgarden-graph-' + new Date().toISOString().slice(0, 10) + '.png';
+        link.href = dataUrl;
+        link.click();
+      } catch (err) {
+        console.error('Failed to export graph PNG:', err);
       }
     });
 

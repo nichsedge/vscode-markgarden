@@ -59,7 +59,8 @@ import {
   setPublishStatusInMarkdown,
   auditGarden,
   resolveNoteFromIndexer,
-  DigitalGardenDiagnosticsProvider
+  DigitalGardenDiagnosticsProvider,
+  DigitalGardenCodeActionProvider
 } from '../src/digitalGarden';
 
 import {
@@ -69,30 +70,18 @@ import {
   markdownItCalloutsPlugin
 } from '../src/callouts';
 
-let testsPassed = 0;
-let testsFailed = 0;
+import { test as bunTest } from 'bun:test';
+
 let testChain = Promise.resolve();
 
-function test(name, fn) {
-  // Queue every test body so async tests execute strictly sequentially
-  // (parallel execution would race on shared indexer/mock state).
-  testChain = testChain.then(async () => {
-    try {
+function test(name: string, fn: () => any | Promise<any>) {
+  // Register with native Bun test runner while maintaining strict sequential queue
+  bunTest(name, async () => {
+    await (testChain = testChain.then(async () => {
       await fn();
-      console.log(`  ✓ ${name}`);
-      testsPassed++;
-    } catch (err) {
-      console.error(`  ✗ ${name}`);
-      console.error(`    ${err.message}`);
-      testsFailed++;
-    }
+    }));
   });
 }
-
-console.log('Running MarkGarden Unit Tests...\n');
-
-// --- Indexer Tests ---
-console.log('Indexer & Parsers:');
 
 test('parseFrontmatter extracts bracketed tags and categories', () => {
   const md = `---\ntitle: "My Note"\ntags: [journal, personal]\ncategories: ["Daily Logs", "Work"]\n---\n# Content`;
@@ -1332,11 +1321,25 @@ test('MarkGardenDocumentLinkProvider dynamically resolves updated targets withou
   assert.strictEqual(links2[0].tooltip.includes('Create "Target"'), true);
 });
 
-// Run queued tests sequentially, then report results
-testChain.then(() => {
-  console.log(`\nResults: ${testsPassed} passed, ${testsFailed} failed.`);
-  if (testsFailed > 0) {
-    process.exit(1);
-  }
+test('DigitalGardenCodeActionProvider provides quick fix to create missing note', () => {
+  const indexer = new WorkspaceNotesIndexer();
+  indexer.indexFileContent('/vault/Alpha.md', '# Alpha Note\nContent');
+
+  const provider = new DigitalGardenCodeActionProvider(indexer);
+  const doc = {
+    fileName: '/vault/Source.md',
+    uri: { toString: () => 'file:///vault/Source.md' },
+    getText: (_range: any) => '[[NonExistentNote]]'
+  };
+
+  const diag = {
+    code: 'broken-wikilink',
+    range: { start: { line: 0, character: 0 }, end: { line: 0, character: 19 } }
+  };
+
+  const actions = provider.provideCodeActions(doc as any, diag.range as any, { diagnostics: [diag as any] } as any);
+  assert.strictEqual(actions.length > 0, true);
+  assert.strictEqual(actions[0].title.includes('Create missing note "NonExistentNote"'), true);
+  assert.strictEqual(actions[0].command?.command, 'markgarden.openWikilink');
 });
 

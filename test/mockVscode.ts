@@ -137,5 +137,16 @@ export class TreeItem {
   constructor(public label: any, public collapsibleState?: any) {}
 }
 
+export class CodeAction {
+  public edit?: any;
+  public diagnostics?: any[];
+  public isPreferred?: boolean;
+  constructor(public title: string, public kind?: any) {}
+}
+
+export const CodeActionKind = {
+  QuickFix: { value: 'quickfix' }
+};
+
 export const TreeItemCollapsibleState = { None: 0, Collapsed: 1, Expanded: 2 };
 export const OverviewRulerLane = { Left: 1, Center: 2, Right: 4, Full: 7 };
