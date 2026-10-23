@@ -16,6 +16,14 @@ export const MEDIA_EXTENSIONS = new Set([
  */
 export function stripQuotes(value: string): string {
   if (!value) return '';
+  const len = value.length;
+  if (len >= 2) {
+    const first = value.charCodeAt(0);
+    const last = value.charCodeAt(len - 1);
+    if ((first === 34 && last === 34) || (first === 39 && last === 39)) {
+      return value.slice(1, -1);
+    }
+  }
   return value.replace(/^['"]|['"]$/g, '');
 }
 
@@ -25,27 +33,25 @@ export function stripQuotes(value: string): string {
  */
 export function splitInlineList(val: string): string[] {
   const entries: string[] = [];
-  let current = '';
+  let start = 0;
   let quoteChar: string | null = null;
   for (let i = 0; i < val.length; i++) {
     const ch = val[i];
     if (quoteChar) {
       if (ch === quoteChar) {
         quoteChar = null;
-      } else {
-        current += ch;
       }
     } else if (ch === '"' || ch === "'") {
       quoteChar = ch;
     } else if (ch === ',') {
-      entries.push(current.trim());
-      current = '';
-    } else {
-      current += ch;
+      const item = stripQuotes(val.slice(start, i).trim());
+      if (item) entries.push(item);
+      start = i + 1;
     }
   }
-  entries.push(current.trim());
-  return entries.map(s => stripQuotes(s)).filter(Boolean);
+  const item = stripQuotes(val.slice(start).trim());
+  if (item) entries.push(item);
+  return entries;
 }
 
 /**
@@ -224,8 +230,15 @@ export function parseFrontmatter(content: string): ParsedFrontmatter {
  */
 export function isMediaFile(filename: string): boolean {
   if (!filename) return false;
-  const clean = filename.split('|')[0].trim().split('#')[0].trim();
-  const ext = path.extname(clean).toLowerCase().replace(/^\./, '');
+  let clean = filename;
+  const pipe = clean.indexOf('|');
+  if (pipe !== -1) clean = clean.slice(0, pipe);
+  const hash = clean.indexOf('#');
+  if (hash !== -1) clean = clean.slice(0, hash);
+  clean = clean.trim();
+  const dot = clean.lastIndexOf('.');
+  if (dot === -1) return false;
+  const ext = clean.slice(dot + 1).toLowerCase();
   return MEDIA_EXTENSIONS.has(ext);
 }
 
